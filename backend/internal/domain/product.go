@@ -50,6 +50,7 @@ type ProductCatalogItem struct {
 	WinningScore    float64   `json:"winning_score"`
 	SnapshotTime    time.Time `json:"snapshot_time"`
 	CreatedAt       time.Time `json:"created_at"`
+	IsFavorited     bool      `json:"is_favorited"`
 }
 
 // ProductCatalogResponse represents the paginated result from product catalog search

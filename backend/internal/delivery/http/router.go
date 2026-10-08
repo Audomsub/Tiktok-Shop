@@ -13,13 +13,14 @@ import (
 
 // RouterConfig holds dependencies required to construct the HTTP router
 type RouterConfig struct {
-	AllowedOrigins string
-	HealthHandler  *handlers.HealthHandler
+	AllowedOrigins     string
+	HealthHandler      *handlers.HealthHandler
 	JobHandler         *handlers.JobHandler
 	LeaderboardHandler *handlers.LeaderboardHandler
 	CategoryHandler    *handlers.CategoryHandler
 	ProductHandler     *handlers.ProductHandler
 	TrendHandler       *handlers.TrendHandler
+	FavoriteHandler    *handlers.FavoriteHandler
 	AuthMiddleware     *customMiddleware.AuthMiddleware
 }
 
@@ -45,17 +46,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			_, _ = w.Write([]byte(`{"message":"pong"}`))
 		})
 
-		// Public Winning Leaderboard
-		if cfg.LeaderboardHandler != nil {
-			r.Get("/leaderboard", cfg.LeaderboardHandler.GetLeaderboard)
-		}
-
-		// Public Product Taxonomy & Catalog
+		// Public Product Taxonomy
 		if cfg.CategoryHandler != nil {
 			r.Get("/categories", cfg.CategoryHandler.GetCategories)
-		}
-		if cfg.ProductHandler != nil {
-			r.Get("/products", cfg.ProductHandler.GetCatalog)
 		}
 
 		// Historical Trends
@@ -67,6 +60,19 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		if cfg.JobHandler != nil {
 			r.Post("/jobs/compute-scores", cfg.JobHandler.ComputeScores)
 		}
+
+		// Winning Leaderboard & Product Catalog (Optional Auth to enrich is_favorited)
+		r.Group(func(optional chi.Router) {
+			if cfg.AuthMiddleware != nil {
+				optional.Use(cfg.AuthMiddleware.OptionalAuth)
+			}
+			if cfg.LeaderboardHandler != nil {
+				optional.Get("/leaderboard", cfg.LeaderboardHandler.GetLeaderboard)
+			}
+			if cfg.ProductHandler != nil {
+				optional.Get("/products", cfg.ProductHandler.GetCatalog)
+			}
+		})
 
 		// Protected endpoints (Requires Supabase JWT)
 		if cfg.AuthMiddleware != nil {
@@ -83,6 +89,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 						"email":   email,
 					})
 				})
+
+				if cfg.FavoriteHandler != nil {
+					protected.Get("/favorites", cfg.FavoriteHandler.GetFavorites)
+					protected.Post("/favorites", cfg.FavoriteHandler.AddFavorite)
+					protected.Delete("/favorites/{productId}", cfg.FavoriteHandler.RemoveFavorite)
+				}
 			})
 		}
 	})

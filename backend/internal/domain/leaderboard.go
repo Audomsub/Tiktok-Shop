@@ -31,6 +31,7 @@ type LeaderboardItem struct {
 	WinningScore    float64          `json:"winning_score"`
 	SnapshotTime    time.Time        `json:"snapshot_time"`
 	Badges          LeaderboardBadge `json:"badges"`
+	IsFavorited     bool             `json:"is_favorited"`
 }
 
 // LeaderboardResponse represents the API response for GET /api/v1/leaderboard

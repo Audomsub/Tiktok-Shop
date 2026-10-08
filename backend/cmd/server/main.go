@@ -50,8 +50,12 @@ func main() {
 	analyticsUsecase := usecase.NewAnalyticsUsecase(snapshotRepo, crawlLogRepo, velocityUsecase, scoringUsecase)
 	jobHandler := handlers.NewJobHandler(analyticsUsecase, cfg.InternalAPIKey)
 
+	favoriteRepo := database.NewPostgresFavoriteRepo(dbPool)
+	favoriteUsecase := usecase.NewFavoriteUsecase(favoriteRepo)
+	favoriteHandler := handlers.NewFavoriteHandler(favoriteUsecase)
+
 	leaderboardRepo := database.NewPostgresLeaderboardRepo(dbPool)
-	leaderboardUsecase := usecase.NewLeaderboardUsecase(leaderboardRepo)
+	leaderboardUsecase := usecase.NewLeaderboardUsecase(leaderboardRepo, favoriteRepo)
 	leaderboardHandler := handlers.NewLeaderboardHandler(leaderboardUsecase)
 
 	categoryRepo := database.NewPostgresCategoryRepo(dbPool)
@@ -59,7 +63,7 @@ func main() {
 	categoryHandler := handlers.NewCategoryHandler(categoryUsecase)
 
 	productRepo := database.NewPostgresProductRepo(dbPool)
-	productUsecase := usecase.NewProductUsecase(productRepo)
+	productUsecase := usecase.NewProductUsecase(productRepo, favoriteRepo)
 	productHandler := handlers.NewProductHandler(productUsecase)
 
 	trendRepo := database.NewPostgresTrendRepo(dbPool)
@@ -77,6 +81,7 @@ func main() {
 		CategoryHandler:    categoryHandler,
 		ProductHandler:     productHandler,
 		TrendHandler:       trendHandler,
+		FavoriteHandler:    favoriteHandler,
 		AuthMiddleware:     authMiddleware,
 	})
 
