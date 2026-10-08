@@ -1,0 +1,44 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go Build Artifacts
+backend/bin/
+backend/*.exe
+*.exe
+*.test
+*.prof
+
+# Node & Next.js Build Artifacts
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+frontend/out/
+build/
+frontend/build/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Logs & Temporary Files
+logs/
+*.log
+scratch/
+tmp/
