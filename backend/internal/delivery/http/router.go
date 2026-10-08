@@ -1,10 +1,12 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/delivery/http/handlers"
 	customMiddleware "github.com/Audomsub/Tiktok-Shop/backend/internal/delivery/http/middleware"
+	"github.com/Audomsub/Tiktok-Shop/backend/internal/domain"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
@@ -18,6 +20,7 @@ type RouterConfig struct {
 	CategoryHandler    *handlers.CategoryHandler
 	ProductHandler     *handlers.ProductHandler
 	TrendHandler       *handlers.TrendHandler
+	AuthMiddleware     *customMiddleware.AuthMiddleware
 }
 
 // NewRouter constructs and configures the application HTTP router
@@ -63,6 +66,24 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		// Ingestion & calculation jobs
 		if cfg.JobHandler != nil {
 			r.Post("/jobs/compute-scores", cfg.JobHandler.ComputeScores)
+		}
+
+		// Protected endpoints (Requires Supabase JWT)
+		if cfg.AuthMiddleware != nil {
+			r.Group(func(protected chi.Router) {
+				protected.Use(cfg.AuthMiddleware.RequireAuth)
+
+				protected.Get("/auth/me", func(w http.ResponseWriter, r *http.Request) {
+					userID, _ := domain.GetUserIDFromContext(r.Context())
+					email, _ := domain.GetUserEmailFromContext(r.Context())
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_ = json.NewEncoder(w).Encode(map[string]string{
+						"user_id": userID,
+						"email":   email,
+					})
+				})
+			})
 		}
 	})
 

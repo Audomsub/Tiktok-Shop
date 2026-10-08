@@ -12,6 +12,7 @@ import (
 
 	httpDelivery "github.com/Audomsub/Tiktok-Shop/backend/internal/delivery/http"
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/delivery/http/handlers"
+	customMiddleware "github.com/Audomsub/Tiktok-Shop/backend/internal/delivery/http/middleware"
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/infrastructure/config"
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/infrastructure/database"
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/usecase"
@@ -65,6 +66,8 @@ func main() {
 	trendUsecase := usecase.NewTrendUsecase(trendRepo)
 	trendHandler := handlers.NewTrendHandler(trendUsecase)
 
+	authMiddleware := customMiddleware.NewAuthMiddleware(cfg.SupabaseJWTSecret)
+
 	// 4. Router Construction
 	router := httpDelivery.NewRouter(httpDelivery.RouterConfig{
 		AllowedOrigins:     cfg.CORSAllowedOrigins,
@@ -74,6 +77,7 @@ func main() {
 		CategoryHandler:    categoryHandler,
 		ProductHandler:     productHandler,
 		TrendHandler:       trendHandler,
+		AuthMiddleware:     authMiddleware,
 	})
 
 	// 5. Server Configuration
