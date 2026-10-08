@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 224 71% 4%;
+  --foreground: 210 40% 98%;
+
+  --card: 222 47% 7%;
+  --card-foreground: 210 40% 98%;
+
+  --primary: 346 100% 58%; /* TikTok Red-Pink vibrant */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 217 33% 14%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217 33% 14%;
+  --muted-foreground: 215 20% 65%;
+
+  --accent: 187 92% 43%; /* TikTok Cyan vibrant */
+  --accent-foreground: 222 47% 11%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217 33% 16%;
+  --input: 217 33% 16%;
+  --ring: 346 100% 58%;
+
+  --radius: 0.75rem;
+}
+
+body {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  min-height: 100vh;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
