@@ -61,6 +61,10 @@ func main() {
 	productUsecase := usecase.NewProductUsecase(productRepo)
 	productHandler := handlers.NewProductHandler(productUsecase)
 
+	trendRepo := database.NewPostgresTrendRepo(dbPool)
+	trendUsecase := usecase.NewTrendUsecase(trendRepo)
+	trendHandler := handlers.NewTrendHandler(trendUsecase)
+
 	// 4. Router Construction
 	router := httpDelivery.NewRouter(httpDelivery.RouterConfig{
 		AllowedOrigins:     cfg.CORSAllowedOrigins,
@@ -69,6 +73,7 @@ func main() {
 		LeaderboardHandler: leaderboardHandler,
 		CategoryHandler:    categoryHandler,
 		ProductHandler:     productHandler,
+		TrendHandler:       trendHandler,
 	})
 
 	// 5. Server Configuration

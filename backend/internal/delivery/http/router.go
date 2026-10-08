@@ -17,6 +17,7 @@ type RouterConfig struct {
 	LeaderboardHandler *handlers.LeaderboardHandler
 	CategoryHandler    *handlers.CategoryHandler
 	ProductHandler     *handlers.ProductHandler
+	TrendHandler       *handlers.TrendHandler
 }
 
 // NewRouter constructs and configures the application HTTP router
@@ -52,6 +53,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		}
 		if cfg.ProductHandler != nil {
 			r.Get("/products", cfg.ProductHandler.GetCatalog)
+		}
+
+		// Historical Trends
+		if cfg.TrendHandler != nil {
+			r.Get("/products/{id}/trends", cfg.TrendHandler.GetProductTrends)
 		}
 
 		// Ingestion & calculation jobs
