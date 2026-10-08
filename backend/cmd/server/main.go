@@ -49,11 +49,16 @@ func main() {
 	analyticsUsecase := usecase.NewAnalyticsUsecase(snapshotRepo, crawlLogRepo, velocityUsecase, scoringUsecase)
 	jobHandler := handlers.NewJobHandler(analyticsUsecase, cfg.InternalAPIKey)
 
+	leaderboardRepo := database.NewPostgresLeaderboardRepo(dbPool)
+	leaderboardUsecase := usecase.NewLeaderboardUsecase(leaderboardRepo)
+	leaderboardHandler := handlers.NewLeaderboardHandler(leaderboardUsecase)
+
 	// 4. Router Construction
 	router := httpDelivery.NewRouter(httpDelivery.RouterConfig{
-		AllowedOrigins: cfg.CORSAllowedOrigins,
-		HealthHandler:  healthHandler,
-		JobHandler:     jobHandler,
+		AllowedOrigins:     cfg.CORSAllowedOrigins,
+		HealthHandler:      healthHandler,
+		JobHandler:         jobHandler,
+		LeaderboardHandler: leaderboardHandler,
 	})
 
 	// 5. Server Configuration

@@ -13,7 +13,8 @@ import (
 type RouterConfig struct {
 	AllowedOrigins string
 	HealthHandler  *handlers.HealthHandler
-	JobHandler     *handlers.JobHandler
+	JobHandler         *handlers.JobHandler
+	LeaderboardHandler *handlers.LeaderboardHandler
 }
 
 // NewRouter constructs and configures the application HTTP router
@@ -37,6 +38,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"message":"pong"}`))
 		})
+
+		// Public Winning Leaderboard
+		if cfg.LeaderboardHandler != nil {
+			r.Get("/leaderboard", cfg.LeaderboardHandler.GetLeaderboard)
+		}
 
 		// Ingestion & calculation jobs
 		if cfg.JobHandler != nil {
