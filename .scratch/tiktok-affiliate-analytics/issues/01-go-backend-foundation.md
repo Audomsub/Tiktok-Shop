@@ -8,11 +8,11 @@ A high-performance Go backend HTTP service foundation utilizing the Chi router, 
 
 ## Acceptance criteria
 
-- [ ] Go module is initialized with Chi router, pgxpool v5, and godotenv dependencies.
-- [ ] Application configuration safely loads DATABASE_URL, PORT, and environment secrets with fallback defaults.
-- [ ] Database connection pool connects to Supabase PostgreSQL and successfully executes ping checks.
-- [ ] GET /health returns HTTP 200 with database status JSON payload `{"status":"ok","database":"connected"}`.
-- [ ] Proper structured logging and graceful shutdown handlers are established.
+- [x] Go module is initialized with Chi router, pgxpool v5, and godotenv dependencies.
+- [x] Application configuration safely loads DATABASE_URL, PORT, and environment secrets with fallback defaults.
+- [x] Database connection pool connects to Supabase PostgreSQL and successfully executes ping checks.
+- [x] GET /health returns HTTP 200 with database status JSON payload `{"status":"ok","database":"connected"}`.
+- [x] Proper structured logging and graceful shutdown handlers are established.
 
 ## Blocked by
 
