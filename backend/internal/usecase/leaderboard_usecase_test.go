@@ -188,4 +188,51 @@ func TestLeaderboardUsecase_GetLeaderboard(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+
+	t.Run("Enriches IsFavorited on leaderboard items when user has favorites", func(t *testing.T) {
+		mockRepo := &mockLeaderboardRepo{
+			getLatestLogFunc: func(ctx context.Context) (*domain.CrawlLog, error) {
+				return &domain.CrawlLog{
+					ID:         "log-200",
+					CrawlRound: "15:00",
+					Status:     domain.CrawlStatusSuccess,
+					StartedAt:  now,
+				}, nil
+			},
+			getTopItemsFunc: func(ctx context.Context, crawlLogID string, limit int) ([]*domain.LeaderboardItem, error) {
+				return []*domain.LeaderboardItem{
+					{ProductID: "top-fav", Name: "Favorited Leader"},
+					{ProductID: "top-other", Name: "Other Leader"},
+				}, nil
+			},
+		}
+
+		favRepo := newInMemoryFavoriteRepo()
+		_ = favRepo.Add(context.Background(), "user-bob", "top-fav")
+
+		u := NewLeaderboardUsecase(mockRepo, favRepo)
+
+		// Authenticated user bob
+		ctxBob := context.WithValue(context.Background(), domain.UserIDContextKey, "user-bob")
+		respBob, err := u.GetLeaderboard(ctxBob, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !respBob.Items[0].IsFavorited {
+			t.Errorf("expected top-fav to have IsFavorited=true for user-bob")
+		}
+		if respBob.Items[1].IsFavorited {
+			t.Errorf("expected top-other to have IsFavorited=false for user-bob")
+		}
+
+		// Anonymous request
+		respAnon, err := u.GetLeaderboard(context.Background(), 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if respAnon.Items[0].IsFavorited || respAnon.Items[1].IsFavorited {
+			t.Errorf("expected anonymous user to have all IsFavorited=false")
+		}
+	})
 }

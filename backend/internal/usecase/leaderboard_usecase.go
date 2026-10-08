@@ -10,12 +10,17 @@ import (
 )
 
 type leaderboardUsecase struct {
-	repo domain.LeaderboardRepository
+	repo    domain.LeaderboardRepository
+	favRepo domain.FavoriteRepository
 }
 
 // NewLeaderboardUsecase constructs an instance of domain.LeaderboardUsecase
-func NewLeaderboardUsecase(repo domain.LeaderboardRepository) domain.LeaderboardUsecase {
-	return &leaderboardUsecase{repo: repo}
+func NewLeaderboardUsecase(repo domain.LeaderboardRepository, favRepo ...domain.FavoriteRepository) domain.LeaderboardUsecase {
+	var fRepo domain.FavoriteRepository
+	if len(favRepo) > 0 {
+		fRepo = favRepo[0]
+	}
+	return &leaderboardUsecase{repo: repo, favRepo: fRepo}
 }
 
 // GetLeaderboard fetches top winning products and enriches them with ranks and badge indicators
@@ -52,6 +57,16 @@ func (u *leaderboardUsecase) GetLeaderboard(ctx context.Context, limit int) (*do
 	// 3. Determine top 15% threshold count for viral surge badge
 	top15PercentCutoff := int(math.Ceil(float64(len(items)) * 0.15))
 
+	// Fetch user's favorite product IDs if user is authenticated and favRepo is configured
+	var favMap map[string]bool
+	if u.favRepo != nil {
+		if userID, ok := domain.GetUserIDFromContext(ctx); ok && userID != "" {
+			if m, err := u.favRepo.GetUserFavoriteProductIDs(ctx, userID); err == nil {
+				favMap = m
+			}
+		}
+	}
+
 	// 4. Enrich each item with rank, expected return, and badges
 	for i, item := range items {
 		item.Rank = i + 1
@@ -78,6 +93,10 @@ func (u *leaderboardUsecase) GetLeaderboard(ctx context.Context, limit int) (*do
 			IsHighCommission: isHighCommission,
 			IsHighYield:      isHighYield,
 			IsWinningPick:    isWinningPick,
+		}
+
+		if favMap != nil && favMap[item.ProductID] {
+			item.IsFavorited = true
 		}
 	}
 

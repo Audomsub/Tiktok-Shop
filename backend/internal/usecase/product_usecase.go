@@ -9,12 +9,17 @@ import (
 )
 
 type productUsecase struct {
-	repo domain.ProductRepository
+	repo    domain.ProductRepository
+	favRepo domain.FavoriteRepository
 }
 
 // NewProductUsecase constructs a new ProductUsecase instance
-func NewProductUsecase(repo domain.ProductRepository) domain.ProductUsecase {
-	return &productUsecase{repo: repo}
+func NewProductUsecase(repo domain.ProductRepository, favRepo ...domain.FavoriteRepository) domain.ProductUsecase {
+	var fRepo domain.FavoriteRepository
+	if len(favRepo) > 0 {
+		fRepo = favRepo[0]
+	}
+	return &productUsecase{repo: repo, favRepo: fRepo}
 }
 
 // GetCatalog queries the catalog using provided filters and calculates expected return per item
@@ -44,10 +49,24 @@ func (u *productUsecase) GetCatalog(ctx context.Context, filter domain.ProductCa
 		}, nil
 	}
 
-	// Calculate Expected Return (THB per unit) = Price * (CommissionRate / 100)
+	// Fetch user's favorite product IDs if user is authenticated and favRepo is configured
+	var favMap map[string]bool
+	if u.favRepo != nil {
+		if userID, ok := domain.GetUserIDFromContext(ctx); ok && userID != "" {
+			if m, err := u.favRepo.GetUserFavoriteProductIDs(ctx, userID); err == nil {
+				favMap = m
+			}
+		}
+	}
+
+	// Calculate Expected Return (THB per unit) = Price * (CommissionRate / 100) and enrich IsFavorited
 	for _, item := range result.Items {
 		expectedReturn := item.Price * (item.CommissionRate / 100.0)
 		item.ExpectedReturn = math.Round(expectedReturn*100) / 100
+
+		if favMap != nil && favMap[item.ID] {
+			item.IsFavorited = true
+		}
 	}
 
 	return result, nil

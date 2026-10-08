@@ -99,4 +99,46 @@ func TestProductUsecase_GetCatalog(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+
+	t.Run("Enriches IsFavorited when user is authenticated with favorites", func(t *testing.T) {
+		mockRepo := &mockProductRepo{
+			listCatalogFunc: func(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error) {
+				return &domain.ProductCatalogResponse{
+					TotalCount: 2,
+					Items: []*domain.ProductCatalogItem{
+						{ID: "prod-fav", Name: "Favorited Item"},
+						{ID: "prod-regular", Name: "Regular Item"},
+					},
+				}, nil
+			},
+		}
+
+		favRepo := newInMemoryFavoriteRepo()
+		_ = favRepo.Add(context.Background(), "user-alice", "prod-fav")
+
+		u := NewProductUsecase(mockRepo, favRepo)
+
+		// Context with user alice
+		ctxAlice := context.WithValue(context.Background(), domain.UserIDContextKey, "user-alice")
+		respAlice, err := u.GetCatalog(ctxAlice, domain.ProductCatalogFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !respAlice.Items[0].IsFavorited {
+			t.Errorf("expected prod-fav to have IsFavorited=true for user-alice")
+		}
+		if respAlice.Items[1].IsFavorited {
+			t.Errorf("expected prod-regular to have IsFavorited=false for user-alice")
+		}
+
+		// Context without user (unauthenticated)
+		respAnon, err := u.GetCatalog(context.Background(), domain.ProductCatalogFilter{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if respAnon.Items[0].IsFavorited || respAnon.Items[1].IsFavorited {
+			t.Errorf("expected anonymous user to have all IsFavorited=false")
+		}
+	})
 }
