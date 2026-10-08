@@ -8,13 +8,13 @@ An interactive Product Catalog page on Next.js featuring a comprehensive filter 
 
 ## Acceptance criteria
 
-- [ ] Category dropdown dynamically populates options from Go API `GET /api/v1/categories`.
-- [ ] Price slider filters products within 80–1,500+ THB.
-- [ ] Commission slider filters products with commission rates $\ge 10\%$.
-- [ ] Search input debounces API calls by 300ms to eliminate redundant network traffic.
-- [ ] TanStack Table displays product image, title, category, price, commission %, total sales, hourly velocity, and winning score.
-- [ ] Column headers allow sorting by any numeric metric.
-- [ ] Pagination controls allow jumping between pages with customizable page size (10, 25, 50).
+- [x] Category dropdown dynamically populates options from Go API `GET /api/v1/categories`.
+- [x] Price slider filters products within 80–1,500+ THB.
+- [x] Commission slider filters products with commission rates $\ge 10\%$.
+- [x] Search input debounces API calls by 300ms to eliminate redundant network traffic.
+- [x] TanStack Table displays product image, title, category, price, commission %, total sales, hourly velocity, and winning score.
+- [x] Column headers allow sorting by any numeric metric.
+- [x] Pagination controls allow jumping between pages with customizable page size (10, 25, 50).
 
 ## Blocked by
 
