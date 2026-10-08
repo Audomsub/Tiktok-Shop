@@ -8,11 +8,11 @@ A core analytics calculation service in Go that takes a batch of raw snapshots f
 
 ## Acceptance criteria
 
-- [ ] Query logic retrieves immediate preceding snapshots per product within a 24-hour Lookback Window.
-- [ ] Products appearing for the first time receive baseline values (`delta_sales = 0`, `velocity_per_hour = 0`).
-- [ ] Products whose previous snapshot is older than 24 hours are treated as fresh baselines to prevent diluted hourly velocity.
-- [ ] Delta Sales ($\Delta\text{Sales} = \text{TotalSales}_{\text{current}} - \text{TotalSales}_{\text{previous}}$) and hourly Sales Velocity ($\text{Velocity} = \Delta\text{Sales} / \Delta\text{Hours}$) are accurately calculated.
-- [ ] Unit tests verify all calculation edge cases (cold start, zero sales change, negative corrections, missing prior history).
+- [x] Query logic retrieves immediate preceding snapshots per product within a 24-hour Lookback Window.
+- [x] Products appearing for the first time receive baseline values (`delta_sales = 0`, `velocity_per_hour = 0`).
+- [x] Products whose previous snapshot is older than 24 hours are treated as fresh baselines to prevent diluted hourly velocity.
+- [x] Delta Sales ($\Delta\text{Sales} = \text{TotalSales}_{\text{current}} - \text{TotalSales}_{\text{previous}}$) and hourly Sales Velocity ($\text{Velocity} = \Delta\text{Sales} / \Delta\text{Hours}$) are accurately calculated.
+- [x] Unit tests verify all calculation edge cases (cold start, zero sales change, negative corrections, missing prior history).
 
 ## Blocked by
 
