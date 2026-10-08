@@ -13,6 +13,7 @@ import (
 type RouterConfig struct {
 	AllowedOrigins string
 	HealthHandler  *handlers.HealthHandler
+	JobHandler     *handlers.JobHandler
 }
 
 // NewRouter constructs and configures the application HTTP router
@@ -36,6 +37,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"message":"pong"}`))
 		})
+
+		// Ingestion & calculation jobs
+		if cfg.JobHandler != nil {
+			r.Post("/jobs/compute-scores", cfg.JobHandler.ComputeScores)
+		}
 	})
 
 	return r

@@ -8,11 +8,11 @@ A high-throughput Worker Pool in Go that buffers and executes chunked bulk SQL u
 
 ## Acceptance criteria
 
-- [ ] Worker pool of 5–10 goroutines processes scored snapshot records in batches of 100–200 items.
-- [ ] Uses chunked bulk SQL update (`UPDATE product_snapshots AS s SET delta_sales = u.delta_sales, velocity_per_hour = u.velocity_per_hour, winning_score = u.winning_score FROM (VALUES ...) AS u(id, delta_sales, velocity_per_hour, winning_score) WHERE s.id = u.id`) avoiding individual per-row update statements.
-- [ ] Successfully persists up to 800 snapshots back to the database in under 5 seconds.
-- [ ] Endpoint `POST /api/v1/jobs/compute-scores` requires internal API key header (`X-API-Key`).
-- [ ] Upon completion, `crawl_logs.status` is updated to `SUCCESS` (or `FAILED` with error message if execution fails).
+- [x] Worker pool of 5–10 goroutines processes scored snapshot records in batches of 100–200 items.
+- [x] Uses chunked bulk SQL update (`UPDATE product_snapshots AS s SET delta_sales = u.delta_sales, velocity_per_hour = u.velocity_per_hour, winning_score = u.winning_score FROM (VALUES ...) AS u(id, delta_sales, velocity_per_hour, winning_score) WHERE s.id = u.id`) avoiding individual per-row update statements.
+- [x] Successfully persists up to 800 snapshots back to the database in under 5 seconds.
+- [x] Endpoint `POST /api/v1/jobs/compute-scores` requires internal API key header (`X-API-Key`).
+- [x] Upon completion, `crawl_logs.status` is updated to `SUCCESS` (or `FAILED` with error message if execution fails).
 
 ## Blocked by
 

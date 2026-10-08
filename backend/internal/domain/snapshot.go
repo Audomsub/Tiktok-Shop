@@ -28,6 +28,14 @@ type CalculatedSnapshot struct {
 	WinningScore    float64
 }
 
+// BatchProcessResult summarizes the analytics execution
+type BatchProcessResult struct {
+	CrawlLogID     string  `json:"crawl_log_id"`
+	ProcessedCount int     `json:"processed_count"`
+	DurationMs     int64   `json:"duration_ms"`
+	Status         string  `json:"status"`
+}
+
 // SnapshotRepository defines database persistence operations for product snapshots
 type SnapshotRepository interface {
 	GetSnapshotsByCrawlLogID(ctx context.Context, crawlLogID string) ([]*ProductSnapshot, error)
@@ -38,4 +46,9 @@ type SnapshotRepository interface {
 // VelocityUsecase defines the business logic contract for sales velocity tracking
 type VelocityUsecase interface {
 	ComputeVelocity(current *ProductSnapshot, previous *ProductSnapshot) (deltaSales int, velocity float64)
+}
+
+// AnalyticsUsecase orchestrates batch scoring and database persistence for a crawl round
+type AnalyticsUsecase interface {
+	ProcessCrawlRound(ctx context.Context, crawlLogID string) (*BatchProcessResult, error)
 }

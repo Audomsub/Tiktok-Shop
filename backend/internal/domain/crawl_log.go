@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"time"
 )
 
@@ -27,4 +28,10 @@ type CrawlLog struct {
 	ErrorMessage          *string     `json:"error_message,omitempty"`
 	StartedAt             time.Time   `json:"started_at"`
 	FinishedAt            *time.Time  `json:"finished_at,omitempty"`
+}
+
+// CrawlLogRepository defines persistence operations for crawl logs
+type CrawlLogRepository interface {
+	GetByID(ctx context.Context, id string) (*CrawlLog, error)
+	UpdateStatus(ctx context.Context, id string, status CrawlStatus, finishedAt time.Time, errMsg *string) error
 }

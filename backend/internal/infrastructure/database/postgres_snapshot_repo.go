@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/domain"
@@ -115,8 +117,97 @@ func (r *PostgresSnapshotRepo) GetPreviousSnapshots(
 	return results, rows.Err()
 }
 
-// BulkUpdateCalculations updates computed metrics back into the database
+// BulkUpdateCalculations persists computed delta sales, velocity, and scores using a worker pool and chunked bulk SQL
 func (r *PostgresSnapshotRepo) BulkUpdateCalculations(ctx context.Context, calculations []*domain.CalculatedSnapshot) error {
-	// Implemented as part of Ticket 04 (Worker Pool Bulk Updater)
+	if len(calculations) == 0 {
+		return nil
+	}
+
+	const chunkSize = 100
+	const numWorkers = 5
+
+	// 1. Partition calculations into chunks
+	var chunks [][]*domain.CalculatedSnapshot
+	for i := 0; i < len(calculations); i += chunkSize {
+		end := i + chunkSize
+		if end > len(calculations) {
+			end = len(calculations)
+		}
+		chunks = append(chunks, calculations[i:end])
+	}
+
+	// 2. Set up Worker Pool
+	chunkChan := make(chan []*domain.CalculatedSnapshot, len(chunks))
+	errChan := make(chan error, len(chunks))
+
+	for _, chunk := range chunks {
+		chunkChan <- chunk
+	}
+	close(chunkChan)
+
+	var wg sync.WaitGroup
+	workers := numWorkers
+	if len(chunks) < workers {
+		workers = len(chunks)
+	}
+
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for chunk := range chunkChan {
+				if err := r.executeChunkUpdate(ctx, chunk); err != nil {
+					errChan <- err
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error encountered if any
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
+
+// executeChunkUpdate builds and executes a single bulk UPDATE ... FROM (VALUES ...) statement
+func (r *PostgresSnapshotRepo) executeChunkUpdate(ctx context.Context, chunk []*domain.CalculatedSnapshot) error {
+	if len(chunk) == 0 {
+		return nil
+	}
+
+	// Dynamically build VALUES ($1::uuid, $2::int, $3::numeric, $4::numeric), ($5::uuid, ...)
+	var valClauses []string
+	var args []interface{}
+	argIdx := 1
+
+	for _, item := range chunk {
+		valClauses = append(valClauses, fmt.Sprintf("($%d::uuid, $%d::int, $%d::numeric, $%d::numeric)", argIdx, argIdx+1, argIdx+2, argIdx+3))
+		args = append(args, item.SnapshotID, item.DeltaSales, item.VelocityPerHour, item.WinningScore)
+		argIdx += 4
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE product_snapshots AS s
+		SET delta_sales = u.delta_sales,
+		    velocity_per_hour = u.velocity_per_hour,
+		    winning_score = u.winning_score
+		FROM (VALUES %s) AS u(id, delta_sales, velocity_per_hour, winning_score)
+		WHERE s.id = u.id;
+	`, strings.Join(valClauses, ", "))
+
+	_, err := r.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed executing chunk bulk update: %w", err)
+	}
+
+	return nil
+}
+
