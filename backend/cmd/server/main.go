@@ -53,12 +53,22 @@ func main() {
 	leaderboardUsecase := usecase.NewLeaderboardUsecase(leaderboardRepo)
 	leaderboardHandler := handlers.NewLeaderboardHandler(leaderboardUsecase)
 
+	categoryRepo := database.NewPostgresCategoryRepo(dbPool)
+	categoryUsecase := usecase.NewCategoryUsecase(categoryRepo)
+	categoryHandler := handlers.NewCategoryHandler(categoryUsecase)
+
+	productRepo := database.NewPostgresProductRepo(dbPool)
+	productUsecase := usecase.NewProductUsecase(productRepo)
+	productHandler := handlers.NewProductHandler(productUsecase)
+
 	// 4. Router Construction
 	router := httpDelivery.NewRouter(httpDelivery.RouterConfig{
 		AllowedOrigins:     cfg.CORSAllowedOrigins,
 		HealthHandler:      healthHandler,
 		JobHandler:         jobHandler,
 		LeaderboardHandler: leaderboardHandler,
+		CategoryHandler:    categoryHandler,
+		ProductHandler:     productHandler,
 	})
 
 	// 5. Server Configuration

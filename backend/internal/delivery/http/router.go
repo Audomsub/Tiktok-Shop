@@ -15,6 +15,8 @@ type RouterConfig struct {
 	HealthHandler  *handlers.HealthHandler
 	JobHandler         *handlers.JobHandler
 	LeaderboardHandler *handlers.LeaderboardHandler
+	CategoryHandler    *handlers.CategoryHandler
+	ProductHandler     *handlers.ProductHandler
 }
 
 // NewRouter constructs and configures the application HTTP router
@@ -42,6 +44,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		// Public Winning Leaderboard
 		if cfg.LeaderboardHandler != nil {
 			r.Get("/leaderboard", cfg.LeaderboardHandler.GetLeaderboard)
+		}
+
+		// Public Product Taxonomy & Catalog
+		if cfg.CategoryHandler != nil {
+			r.Get("/categories", cfg.CategoryHandler.GetCategories)
+		}
+		if cfg.ProductHandler != nil {
+			r.Get("/products", cfg.ProductHandler.GetCatalog)
 		}
 
 		// Ingestion & calculation jobs
