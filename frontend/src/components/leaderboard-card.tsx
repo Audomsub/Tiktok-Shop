@@ -12,13 +12,15 @@ import {
   Zap,
   ShoppingBag,
   TrendingUp,
+  Activity,
 } from "lucide-react";
 
 interface LeaderboardCardProps {
   item: LeaderboardItem;
+  onSelectProduct?: (productId: string, productName: string) => void;
 }
 
-export function LeaderboardCard({ item }: LeaderboardCardProps) {
+export function LeaderboardCard({ item, onSelectProduct }: LeaderboardCardProps) {
   const [imageError, setImageError] = useState(false);
 
   // Rank styling configuration
@@ -161,16 +163,28 @@ export function LeaderboardCard({ item }: LeaderboardCardProps) {
           </div>
         </div>
 
-        {/* Action Button: TikTok Shop Outbound Link */}
-        <a
-          href={item.product_url || `https://shop.tiktok.com`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-secondary to-secondary/80 hover:from-[#fe2c55] hover:to-[#fe2c55]/90 hover:text-white py-2.5 text-xs font-semibold text-foreground transition-all duration-200 border border-border/60 hover:border-transparent group-hover:shadow-md"
-        >
-          <span>View on TikTok Shop</span>
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        {/* Action Buttons: View Trends & TikTok Shop Link */}
+        <div className="flex gap-2">
+          {onSelectProduct && (
+            <button
+              type="button"
+              onClick={() => onSelectProduct(item.product_id, item.name)}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-secondary hover:bg-secondary/80 py-2.5 text-xs font-semibold text-foreground border border-border/60 transition-colors"
+            >
+              <Activity className="h-3.5 w-3.5 text-[#25f4ee]" />
+              <span>Trends</span>
+            </button>
+          )}
+          <a
+            href={item.product_url || `https://shop.tiktok.com`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-secondary to-secondary/80 hover:from-[#fe2c55] hover:to-[#fe2c55]/90 hover:text-white py-2.5 text-xs font-semibold text-foreground transition-all duration-200 border border-border/60 hover:border-transparent"
+          >
+            <span>Shop</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
       </div>
     </div>
   );

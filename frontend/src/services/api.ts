@@ -1,5 +1,6 @@
 import { LeaderboardResponse } from "@/types/leaderboard";
 import { Category, ProductCatalogResponse, CatalogFilterState } from "@/types/catalog";
+import { ProductTrendsResponse } from "@/types/trend";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -70,6 +71,26 @@ export async function fetchCatalog(filter: CatalogFilterState = {}): Promise<Pro
     return await res.json();
   } catch (error) {
     console.error("API Error in fetchCatalog:", error);
+    throw error;
+  }
+}
+
+export async function fetchProductTrends(productId: string, days: number = 7): Promise<ProductTrendsResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/products/${productId}/trends?days=${days}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch product trends: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchProductTrends:", error);
     throw error;
   }
 }

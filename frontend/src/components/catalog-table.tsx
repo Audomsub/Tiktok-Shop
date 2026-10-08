@@ -13,6 +13,7 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  Activity,
 } from "lucide-react";
 
 interface CatalogTableProps {
@@ -27,6 +28,7 @@ interface CatalogTableProps {
   onSort: (column: string) => void;
   onPageChange: (newPage: number) => void;
   onPageSizeChange: (newSize: number) => void;
+  onSelectProduct?: (productId: string, productName: string) => void;
 }
 
 export function CatalogTable({
@@ -41,6 +43,7 @@ export function CatalogTable({
   onSort,
   onPageChange,
   onPageSizeChange,
+  onSelectProduct,
 }: CatalogTableProps) {
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
@@ -249,17 +252,30 @@ export function CatalogTable({
                     </div>
                   </td>
 
-                  {/* Action Link */}
+                  {/* Action Links */}
                   <td className="py-3.5 px-4 text-right">
-                    <a
-                      href={item.product_url || "https://shop.tiktok.com"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-secondary hover:bg-primary hover:text-white px-3 py-1.5 text-xs font-semibold text-foreground border border-border/60 transition-all hover:border-transparent"
-                    >
-                      <span>Shop</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+                    <div className="inline-flex items-center gap-1.5 justify-end">
+                      {onSelectProduct && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectProduct(item.id, item.name)}
+                          className="inline-flex items-center gap-1 rounded-xl bg-secondary hover:bg-secondary/80 px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border/60 transition-colors"
+                          title="View Historical Growth Curve"
+                        >
+                          <Activity className="h-3 w-3 text-[#25f4ee]" />
+                          <span className="hidden sm:inline">Trends</span>
+                        </button>
+                      )}
+                      <a
+                        href={item.product_url || "https://shop.tiktok.com"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-secondary hover:bg-primary hover:text-white px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border/60 transition-all hover:border-transparent"
+                      >
+                        <span>Shop</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
                   </td>
                 </tr>
               ))

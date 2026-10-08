@@ -5,6 +5,7 @@ import { Category, ProductCatalogItem, CatalogFilterState, ProductCatalogRespons
 import { fetchCategories, fetchCatalog } from "@/services/api";
 import { CatalogFilters } from "@/components/catalog-filters";
 import { CatalogTable } from "@/components/catalog-table";
+import { TrendModal } from "@/components/trend-modal";
 import { ShoppingBag, Sparkles, AlertCircle } from "lucide-react";
 
 // Fallback preview data when backend is not connected
@@ -112,6 +113,7 @@ export default function CatalogPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string } | null>(null);
 
   // Load Categories once on mount
   useEffect(() => {
@@ -261,7 +263,17 @@ export default function CatalogPage() {
         onSort={handleSort}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+        onSelectProduct={(id, name) => setSelectedProduct({ id, name })}
       />
+
+      {/* Historical Trend Analysis Modal */}
+      {selectedProduct && (
+        <TrendModal
+          productId={selectedProduct.id}
+          productName={selectedProduct.name}
+          onClose={() => setSelectedProduct(null)}
+        />
+      )}
     </div>
   );
 }

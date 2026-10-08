@@ -8,11 +8,11 @@ An interactive product detail modal / sheet on Next.js powered by Recharts that 
 
 ## Acceptance criteria
 
-- [ ] Clicking any product card or table row opens the Product Trend modal dialog.
-- [ ] Fetches time-series data from Go API `GET /api/v1/products/:id/trends?days=7`.
-- [ ] Recharts ResponsiveContainer renders dual-axis lines (Sales curve and Hourly Velocity curve).
-- [ ] Displays summary metrics at the top: current velocity, 7-day net sales growth, current price, and commission payout.
-- [ ] Includes loading skeleton state and graceful error handling for products with single baseline snapshots.
+- [x] Clicking any product card or table row opens the Product Trend modal dialog.
+- [x] Fetches time-series data from Go API `GET /api/v1/products/:id/trends?days=7`.
+- [x] Recharts ResponsiveContainer renders dual-axis lines (Sales curve and Hourly Velocity curve).
+- [x] Displays summary metrics at the top: current velocity, 7-day net sales growth, current price, and commission payout.
+- [x] Includes loading skeleton state and graceful error handling for products with single baseline snapshots.
 
 ## Blocked by
 

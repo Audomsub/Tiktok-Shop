@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { LeaderboardResponse, LeaderboardItem } from "@/types/leaderboard";
 import { fetchLeaderboard } from "@/services/api";
 import { LeaderboardCard } from "@/components/leaderboard-card";
+import { TrendModal } from "@/components/trend-modal";
 import {
   Trophy,
   RefreshCw,
@@ -160,6 +161,7 @@ export default function LeaderboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string } | null>(null);
 
   const loadData = async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
@@ -261,7 +263,11 @@ export default function LeaderboardPage() {
         /* Leaderboard Cards Grid */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-8">
           {data.items.map((item: LeaderboardItem) => (
-            <LeaderboardCard key={item.product_id} item={item} />
+            <LeaderboardCard
+              key={item.product_id}
+              item={item}
+              onSelectProduct={(id, name) => setSelectedProduct({ id, name })}
+            />
           ))}
         </div>
       ) : (
@@ -275,6 +281,15 @@ export default function LeaderboardPage() {
             The database does not have completed crawl rounds yet. Trigger the crawler to populate product data.
           </p>
         </div>
+      )}
+
+      {/* Historical Trend Analysis Modal */}
+      {selectedProduct && (
+        <TrendModal
+          productId={selectedProduct.id}
+          productName={selectedProduct.name}
+          onClose={() => setSelectedProduct(null)}
+        />
       )}
     </div>
   );
