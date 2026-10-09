@@ -22,6 +22,7 @@ export interface LeaderboardItem {
   winning_score: number;
   snapshot_time: string;
   badges: LeaderboardBadge;
+  is_favorited?: boolean;
 }
 
 export interface LeaderboardResponse {

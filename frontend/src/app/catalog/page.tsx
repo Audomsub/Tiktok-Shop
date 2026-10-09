@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Category, ProductCatalogItem, CatalogFilterState, ProductCatalogResponse } from "@/types/catalog";
 import { fetchCategories, fetchCatalog } from "@/services/api";
+import { useAuth } from "@/context/auth-context";
 import { CatalogFilters } from "@/components/catalog-filters";
 import { CatalogTable } from "@/components/catalog-table";
 import { TrendModal } from "@/components/trend-modal";
@@ -92,6 +93,7 @@ const MOCK_CATALOG_ITEMS: ProductCatalogItem[] = [
 ];
 
 export default function CatalogPage() {
+  const { accessToken } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [catalogData, setCatalogData] = useState<ProductCatalogResponse>({
     page: 1,
@@ -136,7 +138,7 @@ export default function CatalogPage() {
   const loadCatalog = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchCatalog(filters);
+      const data = await fetchCatalog(filters, accessToken || undefined);
       if (data && data.items && data.items.length > 0) {
         setCatalogData(data);
         setIsUsingFallback(false);
@@ -163,7 +165,7 @@ export default function CatalogPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [filters]);
+  }, [filters, accessToken]);
 
   useEffect(() => {
     loadCatalog();

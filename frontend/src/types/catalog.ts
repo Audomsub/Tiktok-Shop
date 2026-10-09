@@ -22,6 +22,7 @@ export interface ProductCatalogItem {
   winning_score: number;
   snapshot_time: string;
   created_at: string;
+  is_favorited?: boolean;
 }
 
 export interface ProductCatalogResponse {
