@@ -172,3 +172,39 @@ export async function removeFavorite(productId: string, token: string): Promise<
     throw error;
   }
 }
+
+export function getCatalogExportUrl(filter: CatalogFilterState = {}): string {
+  const params = new URLSearchParams();
+  if (filter.q) params.set("q", filter.q);
+  if (filter.category_id) params.set("category_id", filter.category_id);
+  if (filter.min_price !== undefined) params.set("min_price", filter.min_price.toString());
+  if (filter.max_price !== undefined) params.set("max_price", filter.max_price.toString());
+  if (filter.min_commission !== undefined) params.set("min_commission", filter.min_commission.toString());
+  if (filter.sort_by) params.set("sort_by", filter.sort_by);
+  if (filter.sort_order) params.set("sort_order", filter.sort_order);
+
+  return `${API_BASE_URL}/api/v1/products/export?${params.toString()}`;
+}
+
+export async function downloadCatalogCSV(filter: CatalogFilterState = {}): Promise<void> {
+  try {
+    const url = getCatalogExportUrl(filter);
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to export CSV: HTTP ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `tiktok_winning_products_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    console.error("CSV Download Error:", error);
+    throw error;
+  }
+}

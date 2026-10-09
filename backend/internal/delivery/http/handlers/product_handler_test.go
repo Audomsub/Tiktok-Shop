@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,8 @@ import (
 )
 
 type mockProductUsecase struct {
-	getCatalogFunc func(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error)
+	getCatalogFunc       func(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error)
+	exportCatalogCSVFunc func(ctx context.Context, filter domain.ProductCatalogFilter, w io.Writer) error
 }
 
 func (m *mockProductUsecase) GetCatalog(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error) {
@@ -21,6 +23,13 @@ func (m *mockProductUsecase) GetCatalog(ctx context.Context, filter domain.Produ
 		return m.getCatalogFunc(ctx, filter)
 	}
 	return nil, nil
+}
+
+func (m *mockProductUsecase) ExportCatalogCSV(ctx context.Context, filter domain.ProductCatalogFilter, w io.Writer) error {
+	if m.exportCatalogCSVFunc != nil {
+		return m.exportCatalogCSVFunc(ctx, filter, w)
+	}
+	return nil
 }
 
 func TestProductHandler_GetCatalog(t *testing.T) {
@@ -112,6 +121,67 @@ func TestProductHandler_GetCatalog(t *testing.T) {
 
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("expected status 500, got %d", rec.Code)
+		}
+	})
+}
+
+func TestProductHandler_ExportCatalog(t *testing.T) {
+	t.Run("Streams CSV with proper headers and passes filter parameters", func(t *testing.T) {
+		var passedFilter domain.ProductCatalogFilter
+		mockUsecase := &mockProductUsecase{
+			exportCatalogCSVFunc: func(ctx context.Context, filter domain.ProductCatalogFilter, w io.Writer) error {
+				passedFilter = filter
+				_, _ = w.Write([]byte("mock-csv-data"))
+				return nil
+			},
+		}
+
+		handler := NewProductHandler(mockUsecase)
+		url := "/api/v1/products/export?q=lipstick&category_id=cat-beauty&min_price=150&max_price=800&min_commission=20&sort_by=winning_score&sort_order=desc"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		rec := httptest.NewRecorder()
+
+		handler.ExportCatalog(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rec.Code)
+		}
+
+		contentType := rec.Header().Get("Content-Type")
+		if contentType != "text/csv; charset=utf-8" {
+			t.Errorf("expected Content-Type text/csv; charset=utf-8, got %q", contentType)
+		}
+
+		contentDisp := rec.Header().Get("Content-Disposition")
+		expectedDisp := `attachment; filename="tiktok_winning_products.csv"`
+		if contentDisp != expectedDisp {
+			t.Errorf("expected Content-Disposition %q, got %q", expectedDisp, contentDisp)
+		}
+
+		if passedFilter.Query != "lipstick" {
+			t.Errorf("expected query lipstick, got %q", passedFilter.Query)
+		}
+		if passedFilter.CategoryID != "cat-beauty" {
+			t.Errorf("expected category_id cat-beauty, got %q", passedFilter.CategoryID)
+		}
+		if passedFilter.MinPrice == nil || *passedFilter.MinPrice != 150.0 {
+			t.Errorf("expected min_price 150.0, got %v", passedFilter.MinPrice)
+		}
+		if passedFilter.MaxPrice == nil || *passedFilter.MaxPrice != 800.0 {
+			t.Errorf("expected max_price 800.0, got %v", passedFilter.MaxPrice)
+		}
+		if passedFilter.MinCommission == nil || *passedFilter.MinCommission != 20.0 {
+			t.Errorf("expected min_commission 20.0, got %v", passedFilter.MinCommission)
+		}
+		if passedFilter.SortBy != "winning_score" {
+			t.Errorf("expected sort_by winning_score, got %q", passedFilter.SortBy)
+		}
+		if passedFilter.SortOrder != "desc" {
+			t.Errorf("expected sort_order desc, got %q", passedFilter.SortOrder)
+		}
+
+		if rec.Body.String() != "mock-csv-data" {
+			t.Errorf("expected body 'mock-csv-data', got %q", rec.Body.String())
 		}
 	})
 }

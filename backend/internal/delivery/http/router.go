@@ -70,6 +70,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				optional.Get("/leaderboard", cfg.LeaderboardHandler.GetLeaderboard)
 			}
 			if cfg.ProductHandler != nil {
+				optional.Get("/products/export", cfg.ProductHandler.ExportCatalog)
 				optional.Get("/products", cfg.ProductHandler.GetCatalog)
 			}
 		})

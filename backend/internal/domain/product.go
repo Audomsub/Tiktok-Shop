@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -65,9 +66,11 @@ type ProductCatalogResponse struct {
 // ProductRepository defines persistence operations for product catalog retrieval
 type ProductRepository interface {
 	ListCatalog(ctx context.Context, filter ProductCatalogFilter) (*ProductCatalogResponse, error)
+	StreamCatalog(ctx context.Context, filter ProductCatalogFilter, onRow func(item *ProductCatalogItem) error) error
 }
 
 // ProductUsecase defines business operations for product catalog
 type ProductUsecase interface {
 	GetCatalog(ctx context.Context, filter ProductCatalogFilter) (*ProductCatalogResponse, error)
+	ExportCatalogCSV(ctx context.Context, filter ProductCatalogFilter, w io.Writer) error
 }
