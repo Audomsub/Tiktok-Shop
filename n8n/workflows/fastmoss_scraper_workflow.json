@@ -1,0 +1,981 @@
+{
+  "name": "FastMoss Scraper & Analytics Ingestion Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6,12,18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-shallow",
+      "name": "Schedule Trigger - Shallow Crawl (06:00, 12:00, 18:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-deep",
+      "name": "Schedule Trigger - Deep Crawl (00:00 Midnight)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        420
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual / Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine crawl round and page count based on trigger source\nconst now = new Date();\n// Bangkok time offset UTC+7\nconst utcHour = now.getUTCHours();\nconst bkkHour = (utcHour + 7) % 24;\n\nlet crawlRound = '12:00';\nlet totalPages = 20;\nlet crawlMode = 'shallow';\n\nconst triggerNode = $input.first().json;\n\nif (bkkHour >= 23 || bkkHour <= 2) {\n  crawlRound = '00:00';\n  totalPages = 80;\n  crawlMode = 'deep';\n} else if (bkkHour >= 5 && bkkHour <= 8) {\n  crawlRound = '06:00';\n  totalPages = 20;\n  crawlMode = 'shallow';\n} else if (bkkHour >= 11 && bkkHour <= 14) {\n  crawlRound = '12:00';\n  totalPages = 20;\n  crawlMode = 'shallow';\n} else if (bkkHour >= 17 && bkkHour <= 20) {\n  crawlRound = '18:00';\n  totalPages = 20;\n  crawlMode = 'shallow';\n}\n\n// Support manual override parameters if provided\nif (triggerNode && triggerNode.customPages) {\n  totalPages = Number(triggerNode.customPages) || totalPages;\n}\nif (triggerNode && triggerNode.customRound) {\n  crawlRound = String(triggerNode.customRound);\n}\n\nreturn [\n  {\n    json: {\n      crawlRound,\n      totalPages,\n      crawlMode,\n      startedAt: now.toISOString(),\n      scrapedProducts: [],\n      successPages: 0,\n      failedPages: 0\n    }\n  }\n];"
+      },
+      "id": "init-crawl-scope",
+      "name": "Initialize Crawl Scope & Round",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/crawl_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"crawl_round\": \"{{ $json.crawlRound }}\",\n  \"status\": \"RUNNING\",\n  \"total_pages_requested\": {{ $json.totalPages }},\n  \"started_at\": \"{{ $json.startedAt }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "supabase-start-audit",
+      "name": "Supabase - Initialize crawl_logs (RUNNING)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crawlLog = $input.first().json;\nconst crawlLogId = Array.isArray(crawlLog) ? crawlLog[0].id : (crawlLog.id || 'dev-crawl-log');\nconst initData = $('Initialize Crawl Scope & Round').first().json;\nconst totalPages = initData.totalPages || 20;\n\n// Generate array of page items for sequential processing\nconst pageItems = [];\nfor (let p = 1; p <= totalPages; p++) {\n  pageItems.push({\n    json: {\n      crawlLogId,\n      crawlRound: initData.crawlRound,\n      page: p,\n      totalPages,\n      crawlMode: initData.crawlMode\n    }\n  });\n}\n\nreturn pageItems;"
+      },
+      "id": "generate-page-queue",
+      "name": "Generate Page Tasks Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "page-loop",
+      "name": "Page Processing Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1160,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst page = item.page;\n\n// Jitter Delay: Randomized between 3 and 7 seconds (3.0s - 7.0s)\nconst jitterSeconds = +(Math.random() * (7.0 - 3.0) + 3.0).toFixed(2);\n\n// Cool-off Pause: 25 seconds after every 10 fetched pages (e.g. before page 11, 21, 31...)\nlet coolOffSeconds = 0;\nlet isCoolOffActive = false;\n\nif (page > 1 && (page - 1) % 10 === 0) {\n  coolOffSeconds = 25;\n  isCoolOffActive = true;\n}\n\n// First page executes with minimal warmup jitter, subsequent pages apply calculated delay\nconst totalDelaySeconds = page === 1 ? 0.5 : +(coolOffSeconds + jitterSeconds).toFixed(2);\n\nreturn [\n  {\n    json: {\n      ...item,\n      jitterSeconds,\n      coolOffSeconds,\n      isCoolOffActive,\n      totalDelaySeconds,\n      totalDelayMs: Math.round(totalDelaySeconds * 1000)\n    }\n  }\n];"
+      },
+      "id": "calc-jitter-cooloff",
+      "name": "Calculate Jitter Delay & Cool-Off Pause",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.totalDelaySeconds }}",
+        "unit": "seconds"
+      },
+      "id": "rate-limit-wait",
+      "name": "Wait (Anti-Ban Jitter & Cool-off)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.FASTMOSS_API_BASE_URL }}/api/v1/tiktok/products",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "page",
+              "value": "={{ $json.page }}"
+            },
+            {
+              "name": "pageSize",
+              "value": "20"
+            },
+            {
+              "name": "country",
+              "value": "TH"
+            },
+            {
+              "name": "sort",
+              "value": "sales_volume_desc"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FASTMOSS_COOKIE }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            },
+            {
+              "name": "Referer",
+              "value": "https://www.fastmoss.com/"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "fetch-fastmoss-page",
+      "name": "HTTP Request - Fetch FastMoss Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        420
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst pageContext = $('Calculate Jitter Delay & Cool-Off Pause').first().json;\n\n// Inspect HTTP status code (handling both full response object and error structures)\nconst statusCode = response.statusCode || (response.error && response.error.status) || 200;\nconst isForbiddenOrRateLimited = statusCode === 403 || statusCode === 429;\n\nlet products = [];\nif (!isForbiddenOrRateLimited && response.body) {\n  if (Array.isArray(response.body.data)) {\n    products = response.body.data;\n  } else if (response.body.data && Array.isArray(response.body.data.list)) {\n    products = response.body.data.list;\n  } else if (Array.isArray(response.body.items)) {\n    products = response.body.items;\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...pageContext,\n      statusCode,\n      isForbiddenOrRateLimited,\n      itemCount: products.length,\n      products,\n      timestamp: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "check-http-status",
+      "name": "Inspect Response & Anti-Ban Detector",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "anti-ban-cond",
+              "leftValue": "={{ $json.isForbiddenOrRateLimited }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-anti-ban-triggered",
+      "name": "If HTTP 403 or 429 (Anti-Ban Triggered)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/crawl_logs?id=eq.{{ $json.crawlLogId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"{{ $json.page > 1 ? 'PARTIAL' : 'FAILED' }}\",\n  \"http_error_code\": {{ $json.statusCode }},\n  \"error_message\": \"Anti-ban triggered: FastMoss returned HTTP {{ $json.statusCode }} on page {{ $json.page }}. Scraper halted immediately to protect cookie session.\",\n  \"total_pages_success\": {{ Math.max(0, $json.page - 1) }},\n  \"finished_at\": \"{{ $json.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "supabase-record-ban-error",
+      "name": "Supabase - Record Anti-Ban Error in crawl_logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2500,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"FASTMOSS_ANTI_BAN_HALT\",\n  \"severity\": \"CRITICAL\",\n  \"http_status\": {{ $json.statusCode }},\n  \"page\": {{ $json.page }},\n  \"crawl_log_id\": \"{{ $json.crawlLogId }}\",\n  \"message\": \"🚨 Immediate scraper termination: FastMoss responded with HTTP {{ $json.statusCode }}. Execution halted to avoid permanent session ban.\",\n  \"timestamp\": \"{{ $json.timestamp }}\"\n}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "send-ban-alert",
+      "name": "Emergency Alert Notification (Discord/Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2740,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Anti-Ban Intercepted: FastMoss returned HTTP {{ $('Inspect Response & Anti-Ban Detector').item.json.statusCode }} on page {{ $('Inspect Response & Anti-Ban Detector').item.json.page }}. Halted immediately."
+      },
+      "id": "stop-on-anti-ban",
+      "name": "Stop and Terminate Workflow Immediately",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2980,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// Collect products from successful page\nreturn [\n  {\n    json: {\n      crawlLogId: item.crawlLogId,\n      crawlRound: item.crawlRound,\n      page: item.page,\n      totalPages: item.totalPages,\n      products: item.products || []\n    }\n  }\n];"
+      },
+      "id": "collect-page-products",
+      "name": "Collect Page Products & Loop Back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2500,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all fetched products across all successful pages\nconst allPageResults = $input.all();\nconst allProducts = [];\nlet crawlLogId = '';\nlet crawlRound = '';\nlet totalPages = 0;\n\nfor (const res of allPageResults) {\n  const data = res.json;\n  if (data.products && Array.isArray(data.products)) {\n    allProducts.push(...data.products);\n  }\n  if (data.crawlLogId) crawlLogId = data.crawlLogId;\n  if (data.crawlRound) crawlRound = data.crawlRound;\n  if (data.totalPages) totalPages = data.totalPages;\n}\n\nreturn [\n  {\n    json: {\n      crawlLogId,\n      crawlRound,\n      totalPagesRequested: totalPages,\n      totalPagesSuccess: allPageResults.length,\n      rawProductsScraped: allProducts.length,\n      products: allProducts,\n      completedScrapeAt: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "aggregate-scraped-products",
+      "name": "Aggregate Raw Products (Ready for Quality Gate)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json;\nconst rawProducts = inputData.products || [];\nconst crawlLogId = inputData.crawlLogId;\nconst crawlRound = inputData.crawlRound;\nconst totalPagesRequested = inputData.totalPagesRequested || 0;\nconst totalPagesSuccess = inputData.totalPagesSuccess || 0;\nconst rawProductsScraped = inputData.rawProductsScraped || rawProducts.length;\n\nfunction parsePrice(val) {\n  if (typeof val === 'number') return val;\n  if (!val) return 0;\n  const cleaned = String(val).replace(/[^0-9.]/g, '');\n  return parseFloat(cleaned) || 0;\n}\n\nfunction parseCommission(val) {\n  if (typeof val === 'number') {\n    return val > 0 && val <= 1.0 ? +(val * 100).toFixed(2) : +val.toFixed(2);\n  }\n  if (!val) return 0;\n  const cleaned = String(val).replace(/[^0-9.]/g, '');\n  const num = parseFloat(cleaned) || 0;\n  return num > 0 && num <= 1.0 ? +(num * 100).toFixed(2) : +num.toFixed(2);\n}\n\nfunction parseSales(val) {\n  if (typeof val === 'number') return Math.round(val);\n  if (!val) return 0;\n  const str = String(val).toLowerCase().trim();\n  if (str.endsWith('k')) {\n    return Math.round(parseFloat(str.replace('k', '')) * 1000);\n  }\n  if (str.endsWith('m')) {\n    return Math.round(parseFloat(str.replace('m', '')) * 1000000);\n  }\n  const cleaned = str.replace(/[^0-9]/g, '');\n  return parseInt(cleaned, 10) || 0;\n}\n\nfunction slugify(name) {\n  if (!name) return 'general';\n  return String(name)\n    .toLowerCase()\n    .trim()\n    .replace(/[^\\w\\s-]/g, '')\n    .replace(/[\\s_-]+/g, '-')\n    .replace(/^-+|-+$/g, '') || 'general';\n}\n\nconst filteredProducts = [];\nconst categoryMap = new Map();\n\nfor (const raw of rawProducts) {\n  const sourceId = String(raw.product_id || raw.id || raw.item_id || raw.goods_id || '').trim();\n  if (!sourceId) continue;\n\n  const price = parsePrice(raw.price || raw.min_price || raw.price_value);\n  const commissionRate = parseCommission(raw.commission_rate || raw.commission || raw.commission_ratio);\n  const totalSales = parseSales(raw.total_sales || raw.sales || raw.sold_count || raw.sales_volume);\n\n  // Pre-Filtering Quality Gate Criteria:\n  // 1. Commission >= 10%\n  // 2. Price between 80 and 1,500 THB\n  // 3. Total Sales >= 30\n  if (commissionRate >= 10.0 && price >= 80.0 && price <= 1500.0 && totalSales >= 30) {\n    const categoryName = String(raw.category_name || raw.category || raw.cate_name || 'General').trim();\n    const categorySlug = slugify(categoryName);\n\n    if (!categoryMap.has(categorySlug)) {\n      categoryMap.set(categorySlug, {\n        name: categoryName,\n        slug: categorySlug\n      });\n    }\n\n    filteredProducts.push({\n      sourceId,\n      name: String(raw.title || raw.product_name || raw.name || 'TikTok Product').trim(),\n      imageUrl: String(raw.image_url || raw.cover || raw.image || raw.pic_url || '').trim(),\n      productUrl: String(raw.product_url || raw.url || raw.detail_url || `https://shop.tiktok.com/view/product/${sourceId}`).trim(),\n      categoryName,\n      categorySlug,\n      price: +price.toFixed(2),\n      commissionRate: +commissionRate.toFixed(2),\n      totalSales\n    });\n  }\n}\n\nconst categories = Array.from(categoryMap.values());\n\nreturn [\n  {\n    json: {\n      crawlLogId,\n      crawlRound,\n      totalPagesRequested,\n      totalPagesSuccess,\n      rawProductsScraped,\n      filteredProductsSaved: filteredProducts.length,\n      categories,\n      filteredProducts,\n      hasFilteredProducts: filteredProducts.length > 0\n    }\n  }\n];"
+      },
+      "id": "quality-gate-filter",
+      "name": "Pre-Filter Quality Gate & Taxonomy Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-products-cond",
+              "leftValue": "={{ $json.hasFilteredProducts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-any-products-passed",
+      "name": "If Any Products Passed Quality Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/categories?on_conflict=slug",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.categories) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "supabase-upsert-categories",
+      "name": "Supabase - Upsert Categories",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const gateData = $('Pre-Filter Quality Gate & Taxonomy Extraction').first().json;\nconst filteredProducts = gateData.filteredProducts || [];\nconst rawCategoriesResp = $input.all();\n\n// Map slug to category UUID returned by Supabase\nconst slugToId = new Map();\nfor (const item of rawCategoriesResp) {\n  const cat = item.json;\n  if (Array.isArray(cat)) {\n    for (const c of cat) {\n      if (c && c.slug && c.id) slugToId.set(c.slug, c.id);\n    }\n  } else if (cat && cat.slug && cat.id) {\n    slugToId.set(cat.slug, cat.id);\n  }\n}\n\n// Build products array for PostgREST upsert\nconst productsToUpsert = [];\nconst originalFilteredMap = {};\nconst nowIso = new Date().toISOString();\n\nfor (const p of filteredProducts) {\n  const categoryId = slugToId.get(p.categorySlug) || null;\n  productsToUpsert.push({\n    source_id: p.sourceId,\n    name: p.name,\n    image_url: p.imageUrl,\n    product_url: p.productUrl,\n    commission_rate: p.commissionRate,\n    category_id: categoryId,\n    updated_at: nowIso\n  });\n\n  originalFilteredMap[p.sourceId] = {\n    price: p.price,\n    commissionRate: p.commissionRate,\n    totalSales: p.totalSales\n  };\n}\n\nreturn [\n  {\n    json: {\n      crawlLogId: gateData.crawlLogId,\n      crawlRound: gateData.crawlRound,\n      totalPagesRequested: gateData.totalPagesRequested,\n      totalPagesSuccess: gateData.totalPagesSuccess,\n      rawProductsScraped: gateData.rawProductsScraped,\n      filteredProductsSaved: gateData.filteredProductsSaved,\n      productsToUpsert,\n      originalFilteredMap\n    }\n  }\n];"
+      },
+      "id": "map-categories-products",
+      "name": "Prepare Products with Category IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/products?on_conflict=source_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.productsToUpsert) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "supabase-upsert-products",
+      "name": "Supabase - Upsert Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2580,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepData = $('Prepare Products with Category IDs').first().json;\nconst originalMap = prepData.originalFilteredMap || {};\nconst rawProductsResp = $input.all();\nconst crawlLogId = prepData.crawlLogId;\nconst nowIso = new Date().toISOString();\n\nconst snapshots = [];\nfor (const item of rawProductsResp) {\n  const p = item.json;\n  const list = Array.isArray(p) ? p : [p];\n  for (const prod of list) {\n    if (!prod || !prod.id || !prod.source_id) continue;\n    const orig = originalMap[prod.source_id] || { price: 0, commissionRate: 0, totalSales: 0 };\n    snapshots.push({\n      product_id: prod.id,\n      crawl_log_id: crawlLogId,\n      snapshot_time: nowIso,\n      price: orig.price,\n      commission_rate: orig.commissionRate,\n      total_sales: orig.totalSales,\n      delta_sales: 0,\n      velocity_per_hour: 0.00,\n      winning_score: 0.00\n    });\n  }\n}\n\nreturn [\n  {\n    json: {\n      crawlLogId,\n      crawlRound: prepData.crawlRound,\n      totalPagesRequested: prepData.totalPagesRequested,\n      totalPagesSuccess: prepData.totalPagesSuccess,\n      rawProductsScraped: prepData.rawProductsScraped,\n      filteredProductsSaved: snapshots.length,\n      snapshots\n    }\n  }\n];"
+      },
+      "id": "prepare-snapshots-payload",
+      "name": "Prepare Snapshots Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2820,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/product_snapshots?on_conflict=product_id,crawl_log_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.snapshots) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "supabase-insert-snapshots",
+      "name": "Supabase - Insert Product Snapshots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3060,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const gateData = $('Pre-Filter Quality Gate & Taxonomy Extraction').first().json;\nlet filteredSaved = 0;\n\ntry {\n  const snapshotData = $('Prepare Snapshots Payload').first().json;\n  filteredSaved = snapshotData.filteredProductsSaved || 0;\n} catch (e) {\n  filteredSaved = gateData.filteredProductsSaved || 0;\n}\n\nreturn [\n  {\n    json: {\n      crawlLogId: gateData.crawlLogId,\n      crawlRound: gateData.crawlRound,\n      totalPagesRequested: gateData.totalPagesRequested,\n      totalPagesSuccess: gateData.totalPagesSuccess,\n      rawProductsScraped: gateData.rawProductsScraped,\n      filteredProductsSaved: filteredSaved\n    }\n  }\n];"
+      },
+      "id": "format-audit-counts",
+      "name": "Format Audit Counts Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/crawl_logs?id=eq.{{ $json.crawlLogId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"total_pages_requested\": {{ $json.totalPagesRequested }},\n  \"total_pages_success\": {{ $json.totalPagesSuccess }},\n  \"raw_products_scraped\": {{ $json.rawProductsScraped }},\n  \"filtered_products_saved\": {{ $json.filteredProductsSaved }}\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "supabase-update-crawl-audit",
+      "name": "Supabase - Update crawl_logs Audit Counts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3540,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GO_BACKEND_URL }}/api/v1/jobs/compute-scores?crawl_log_id={{ $('Format Audit Counts Update').first().json.crawlLogId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"crawl_log_id\": \"{{ $('Format Audit Counts Update').first().json.crawlLogId }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "webhook-trigger-go-engine",
+      "name": "HTTP Request - Trigger Go Analytics Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3780,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const engineResult = $input.first().json;\nconst auditData = $('Format Audit Counts Update').first().json;\n\nreturn [\n  {\n    json: {\n      status: \"SUCCESS\",\n      crawlLogId: auditData.crawlLogId,\n      crawlRound: auditData.crawlRound,\n      totalPagesRequested: auditData.totalPagesRequested,\n      totalPagesSuccess: auditData.totalPagesSuccess,\n      rawProductsScraped: auditData.rawProductsScraped,\n      filteredProductsSaved: auditData.filteredProductsSaved,\n      scoringEngineResult: engineResult,\n      completedAt: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "execution-summary",
+      "name": "Workflow Execution Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        660
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Shallow Crawl (06:00, 12:00, 18:00)": {
+      "main": [
+        [
+          {
+            "node": "Initialize Crawl Scope & Round",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger - Deep Crawl (00:00 Midnight)": {
+      "main": [
+        [
+          {
+            "node": "Initialize Crawl Scope & Round",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual / Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Initialize Crawl Scope & Round",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Crawl Scope & Round": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Initialize crawl_logs (RUNNING)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Initialize crawl_logs (RUNNING)": {
+      "main": [
+        [
+          {
+            "node": "Generate Page Tasks Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Page Tasks Queue": {
+      "main": [
+        [
+          {
+            "node": "Page Processing Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Page Processing Loop": {
+      "main": [
+        [
+          {
+            "node": "Calculate Jitter Delay & Cool-Off Pause",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aggregate Raw Products (Ready for Quality Gate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Jitter Delay & Cool-Off Pause": {
+      "main": [
+        [
+          {
+            "node": "Wait (Anti-Ban Jitter & Cool-off)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (Anti-Ban Jitter & Cool-off)": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Fetch FastMoss Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Fetch FastMoss Page": {
+      "main": [
+        [
+          {
+            "node": "Inspect Response & Anti-Ban Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inspect Response & Anti-Ban Detector": {
+      "main": [
+        [
+          {
+            "node": "If HTTP 403 or 429 (Anti-Ban Triggered)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If HTTP 403 or 429 (Anti-Ban Triggered)": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Record Anti-Ban Error in crawl_logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collect Page Products & Loop Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Record Anti-Ban Error in crawl_logs": {
+      "main": [
+        [
+          {
+            "node": "Emergency Alert Notification (Discord/Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emergency Alert Notification (Discord/Slack)": {
+      "main": [
+        [
+          {
+            "node": "Stop and Terminate Workflow Immediately",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Page Products & Loop Back": {
+      "main": [
+        [
+          {
+            "node": "Page Processing Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Raw Products (Ready for Quality Gate)": {
+      "main": [
+        [
+          {
+            "node": "Pre-Filter Quality Gate & Taxonomy Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Filter Quality Gate & Taxonomy Extraction": {
+      "main": [
+        [
+          {
+            "node": "If Any Products Passed Quality Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Any Products Passed Quality Gate": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Upsert Categories",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Audit Counts Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Upsert Categories": {
+      "main": [
+        [
+          {
+            "node": "Prepare Products with Category IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Products with Category IDs": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Upsert Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Upsert Products": {
+      "main": [
+        [
+          {
+            "node": "Prepare Snapshots Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Snapshots Payload": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Insert Product Snapshots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Insert Product Snapshots": {
+      "main": [
+        [
+          {
+            "node": "Format Audit Counts Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Audit Counts Update": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Update crawl_logs Audit Counts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Update crawl_logs Audit Counts": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Trigger Go Analytics Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Trigger Go Analytics Engine": {
+      "main": [
+        [
+          {
+            "node": "Workflow Execution Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

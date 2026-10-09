@@ -1,0 +1,210 @@
+import { LeaderboardResponse } from "@/types/leaderboard";
+import { Category, ProductCatalogResponse, CatalogFilterState } from "@/types/catalog";
+import { ProductTrendsResponse } from "@/types/trend";
+import { FavoriteListResponse } from "@/types/favorite";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+export async function fetchLeaderboard(limit: number = 10, token?: string): Promise<LeaderboardResponse> {
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/leaderboard?limit=${limit}`, {
+      cache: "no-store", // Always fetch fresh realtime analytics
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch leaderboard: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchLeaderboard:", error);
+    throw error;
+  }
+}
+
+export async function fetchCategories(): Promise<Category[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/categories`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch categories: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchCategories:", error);
+    throw error;
+  }
+}
+
+export async function fetchCatalog(filter: CatalogFilterState = {}, token?: string): Promise<ProductCatalogResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (filter.q) params.set("q", filter.q);
+    if (filter.category_id) params.set("category_id", filter.category_id);
+    if (filter.min_price !== undefined) params.set("min_price", filter.min_price.toString());
+    if (filter.max_price !== undefined) params.set("max_price", filter.max_price.toString());
+    if (filter.min_commission !== undefined) params.set("min_commission", filter.min_commission.toString());
+    if (filter.sort_by) params.set("sort_by", filter.sort_by);
+    if (filter.sort_order) params.set("sort_order", filter.sort_order);
+    if (filter.page) params.set("page", filter.page.toString());
+    if (filter.limit) params.set("limit", filter.limit.toString());
+
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/products?${params.toString()}`, {
+      cache: "no-store",
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch product catalog: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchCatalog:", error);
+    throw error;
+  }
+}
+
+export async function fetchProductTrends(productId: string, days: number = 7): Promise<ProductTrendsResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/products/${productId}/trends?days=${days}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch product trends: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchProductTrends:", error);
+    throw error;
+  }
+}
+
+export async function fetchFavorites(token: string): Promise<FavoriteListResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch favorites: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchFavorites:", error);
+    throw error;
+  }
+}
+
+export async function addFavorite(productId: string, token: string): Promise<{ message: string; product_id: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ product_id: productId }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      throw new Error(errorData?.error || `Failed to add favorite: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in addFavorite:", error);
+    throw error;
+  }
+}
+
+export async function removeFavorite(productId: string, token: string): Promise<{ message: string; product_id: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites/${encodeURIComponent(productId)}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      throw new Error(errorData?.error || `Failed to remove favorite: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in removeFavorite:", error);
+    throw error;
+  }
+}
+
+export function getCatalogExportUrl(filter: CatalogFilterState = {}): string {
+  const params = new URLSearchParams();
+  if (filter.q) params.set("q", filter.q);
+  if (filter.category_id) params.set("category_id", filter.category_id);
+  if (filter.min_price !== undefined) params.set("min_price", filter.min_price.toString());
+  if (filter.max_price !== undefined) params.set("max_price", filter.max_price.toString());
+  if (filter.min_commission !== undefined) params.set("min_commission", filter.min_commission.toString());
+  if (filter.sort_by) params.set("sort_by", filter.sort_by);
+  if (filter.sort_order) params.set("sort_order", filter.sort_order);
+
+  return `${API_BASE_URL}/api/v1/products/export?${params.toString()}`;
+}
+
+export async function downloadCatalogCSV(filter: CatalogFilterState = {}): Promise<void> {
+  try {
+    const url = getCatalogExportUrl(filter);
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to export CSV: HTTP ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `tiktok_winning_products_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    console.error("CSV Download Error:", error);
+    throw error;
+  }
+}

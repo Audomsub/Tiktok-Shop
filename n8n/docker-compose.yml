@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: affiliate_pulse_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=Asia/Bangkok
+      - TZ=Asia/Bangkok
+      - N8N_DEFAULT_BINARY_DATA_MODE=default
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      # Scraper Credentials & External Integrations
+      - FASTMOSS_COOKIE=${FASTMOSS_COOKIE}
+      - FASTMOSS_API_BASE_URL=${FASTMOSS_API_BASE_URL:-https://api.fastmoss.com}
+      - SUPABASE_URL=${SUPABASE_URL:-https://evyltfcspqzctgdehxff.supabase.co}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GO_BACKEND_URL=${GO_BACKEND_URL:-http://host.docker.internal:8080}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+    name: affiliate_pulse_n8n_data
