@@ -1,0 +1,105 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: affiliate_pulse_db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=tiktok_shop
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tiktok_shop"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: affiliate_pulse_backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/tiktok_shop?sslmode=disable}
+      - SUPABASE_URL=${SUPABASE_URL:-https://evyltfcspqzctgdehxff.supabase.co}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev_internal_api_key_secret_2026}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: affiliate_pulse_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-https://evyltfcspqzctgdehxff.supabase.co}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2eWx0ZmNzcHF6Y3RnZGVoeGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0NDA0NzUsImV4cCI6MjEwNzAxNjQ3NX0.KP3wwTCfli28bboe9w8-kHPBeTH74WuwUpwH5rklxXQ}
+    depends_on:
+      - backend
+    networks:
+      - app_network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: affiliate_pulse_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=Asia/Bangkok
+      - TZ=Asia/Bangkok
+      - N8N_DEFAULT_BINARY_DATA_MODE=default
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      # Scraper Credentials & External Integrations
+      - FASTMOSS_COOKIE=${FASTMOSS_COOKIE}
+      - FASTMOSS_API_BASE_URL=${FASTMOSS_API_BASE_URL:-https://api.fastmoss.com}
+      - SUPABASE_URL=${SUPABASE_URL:-https://evyltfcspqzctgdehxff.supabase.co}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GO_BACKEND_URL=http://backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev_internal_api_key_secret_2026}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - app_network
+
+volumes:
+  pg_data:
+    name: affiliate_pulse_pg_data
+  n8n_data:
+    name: affiliate_pulse_n8n_data
+
+networks:
+  app_network:
+    name: affiliate_pulse_network
+    driver: bridge
