@@ -1,4 +1,5 @@
 {
+  "id": "fastmoss-scraper-pipeline",
   "name": "FastMoss Scraper & Analytics Ingestion Pipeline",
   "nodes": [
     {
