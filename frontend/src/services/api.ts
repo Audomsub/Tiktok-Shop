@@ -1,16 +1,22 @@
 import { LeaderboardResponse } from "@/types/leaderboard";
 import { Category, ProductCatalogResponse, CatalogFilterState } from "@/types/catalog";
 import { ProductTrendsResponse } from "@/types/trend";
+import { FavoriteListResponse } from "@/types/favorite";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-export async function fetchLeaderboard(limit: number = 10): Promise<LeaderboardResponse> {
+export async function fetchLeaderboard(limit: number = 10, token?: string): Promise<LeaderboardResponse> {
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const res = await fetch(`${API_BASE_URL}/api/v1/leaderboard?limit=${limit}`, {
       cache: "no-store", // Always fetch fresh realtime analytics
-      headers: {
-        Accept: "application/json",
-      },
+      headers,
     });
 
     if (!res.ok) {
@@ -44,7 +50,7 @@ export async function fetchCategories(): Promise<Category[]> {
   }
 }
 
-export async function fetchCatalog(filter: CatalogFilterState = {}): Promise<ProductCatalogResponse> {
+export async function fetchCatalog(filter: CatalogFilterState = {}, token?: string): Promise<ProductCatalogResponse> {
   try {
     const params = new URLSearchParams();
     if (filter.q) params.set("q", filter.q);
@@ -57,11 +63,16 @@ export async function fetchCatalog(filter: CatalogFilterState = {}): Promise<Pro
     if (filter.page) params.set("page", filter.page.toString());
     if (filter.limit) params.set("limit", filter.limit.toString());
 
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const res = await fetch(`${API_BASE_URL}/api/v1/products?${params.toString()}`, {
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
+      headers,
     });
 
     if (!res.ok) {
@@ -91,6 +102,73 @@ export async function fetchProductTrends(productId: string, days: number = 7): P
     return await res.json();
   } catch (error) {
     console.error("API Error in fetchProductTrends:", error);
+    throw error;
+  }
+}
+
+export async function fetchFavorites(token: string): Promise<FavoriteListResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch favorites: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in fetchFavorites:", error);
+    throw error;
+  }
+}
+
+export async function addFavorite(productId: string, token: string): Promise<{ message: string; product_id: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ product_id: productId }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      throw new Error(errorData?.error || `Failed to add favorite: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in addFavorite:", error);
+    throw error;
+  }
+}
+
+export async function removeFavorite(productId: string, token: string): Promise<{ message: string; product_id: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/favorites/${encodeURIComponent(productId)}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      throw new Error(errorData?.error || `Failed to remove favorite: HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("API Error in removeFavorite:", error);
     throw error;
   }
 }

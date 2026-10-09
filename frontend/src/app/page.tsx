@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LeaderboardResponse, LeaderboardItem } from "@/types/leaderboard";
 import { fetchLeaderboard } from "@/services/api";
+import { useAuth } from "@/context/auth-context";
 import { LeaderboardCard } from "@/components/leaderboard-card";
 import { TrendModal } from "@/components/trend-modal";
 import {
@@ -157,6 +158,7 @@ const MOCK_FALLBACK_LEADERBOARD: LeaderboardResponse = {
 };
 
 export default function LeaderboardPage() {
+  const { accessToken } = useAuth();
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -166,7 +168,7 @@ export default function LeaderboardPage() {
   const loadData = async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     try {
-      const result = await fetchLeaderboard(10);
+      const result = await fetchLeaderboard(10, accessToken || undefined);
       // If backend returned items, use them; if empty, use fallback in demo environment
       if (result && result.items && result.items.length > 0) {
         setData(result);
@@ -187,7 +189,7 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [accessToken]);
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">

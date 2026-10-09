@@ -14,7 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
+  Heart,
 } from "lucide-react";
+import { useFavorites } from "@/context/favorites-context";
 
 interface CatalogTableProps {
   items: ProductCatalogItem[];
@@ -45,6 +47,7 @@ export function CatalogTable({
   onPageSizeChange,
   onSelectProduct,
 }: CatalogTableProps) {
+  const { isFavorited, toggleFavorite } = useFavorites();
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   const handleImageError = (id: string) => {
@@ -255,6 +258,28 @@ export function CatalogTable({
                   {/* Action Links */}
                   <td className="py-3.5 px-4 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
+                      {/* Heart Bookmark Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(item.id);
+                        }}
+                        className={`inline-flex items-center justify-center rounded-xl p-2 text-xs font-semibold border transition-all ${
+                          isFavorited(item.id)
+                            ? "bg-[#fe2c55]/20 text-[#fe2c55] border-[#fe2c55]/40 hover:bg-[#fe2c55]/30 shadow-sm shadow-[#fe2c55]/20"
+                            : "bg-secondary text-muted-foreground border-border/60 hover:text-[#fe2c55] hover:bg-secondary/80"
+                        }`}
+                        title={isFavorited(item.id) ? "Remove from bookmarks" : "Save to bookmarks"}
+                        aria-label={isFavorited(item.id) ? "Remove from bookmarks" : "Save to bookmarks"}
+                      >
+                        <Heart
+                          className={`h-3.5 w-3.5 transition-transform active:scale-125 ${
+                            isFavorited(item.id) ? "fill-[#fe2c55] text-[#fe2c55]" : ""
+                          }`}
+                        />
+                      </button>
+
                       {onSelectProduct && (
                         <button
                           type="button"
@@ -270,7 +295,7 @@ export function CatalogTable({
                         href={item.product_url || "https://shop.tiktok.com"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-secondary hover:bg-primary hover:text-white px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border/60 transition-all hover:border-transparent"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-secondary hover:bg-[#fe2c55] hover:text-white px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border/60 transition-all hover:border-transparent"
                       >
                         <span>Shop</span>
                         <ExternalLink className="h-3 w-3" />

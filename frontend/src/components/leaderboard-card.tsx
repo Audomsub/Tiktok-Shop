@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { LeaderboardItem } from "@/types/leaderboard";
 import { formatTHB, formatNumber } from "@/lib/utils";
+import { useFavorites } from "@/context/favorites-context";
 import {
   Flame,
   Percent,
@@ -13,6 +14,7 @@ import {
   ShoppingBag,
   TrendingUp,
   Activity,
+  Heart,
 } from "lucide-react";
 
 interface LeaderboardCardProps {
@@ -22,6 +24,8 @@ interface LeaderboardCardProps {
 
 export function LeaderboardCard({ item, onSelectProduct }: LeaderboardCardProps) {
   const [imageError, setImageError] = useState(false);
+  const { isFavorited, toggleFavorite } = useFavorites();
+  const favorited = isFavorited(item.product_id) || Boolean(item.is_favorited && !isFavorited(item.product_id) ? false : isFavorited(item.product_id));
 
   // Rank styling configuration
   const getRankBadge = (rank: number) => {
@@ -73,13 +77,37 @@ export function LeaderboardCard({ item, onSelectProduct }: LeaderboardCardProps)
             <span>{rankInfo.label}</span>
           </div>
 
-          {/* Winning Score Badge */}
-          <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fe2c55]/20 to-[#25f4ee]/20 border border-[#fe2c55]/30 px-3 py-1 shadow-sm">
-            <Zap className="h-3.5 w-3.5 text-[#25f4ee] fill-[#25f4ee]" />
-            <span className="text-xs font-medium text-muted-foreground">Score</span>
-            <span className="text-sm font-extrabold text-foreground tracking-tight">
-              {item.winning_score.toFixed(1)}
-            </span>
+          <div className="flex items-center gap-2">
+            {/* Winning Score Badge */}
+            <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fe2c55]/20 to-[#25f4ee]/20 border border-[#fe2c55]/30 px-3 py-1 shadow-sm">
+              <Zap className="h-3.5 w-3.5 text-[#25f4ee] fill-[#25f4ee]" />
+              <span className="text-xs font-medium text-muted-foreground">Score</span>
+              <span className="text-sm font-extrabold text-foreground tracking-tight">
+                {item.winning_score.toFixed(1)}
+              </span>
+            </div>
+
+            {/* Bookmark Heart Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite(item.product_id);
+              }}
+              className={`rounded-xl p-1.5 border transition-all duration-200 ${
+                favorited
+                  ? "bg-[#fe2c55]/20 text-[#fe2c55] border-[#fe2c55]/40 hover:bg-[#fe2c55]/30 shadow-sm shadow-[#fe2c55]/20"
+                  : "bg-secondary/60 text-muted-foreground border-border/60 hover:text-[#fe2c55] hover:bg-secondary"
+              }`}
+              title={favorited ? "Remove from bookmarks" : "Save to bookmarks"}
+              aria-label={favorited ? "Remove from bookmarks" : "Save to bookmarks"}
+            >
+              <Heart
+                className={`h-4 w-4 transition-transform active:scale-125 ${
+                  favorited ? "fill-[#fe2c55] text-[#fe2c55]" : ""
+                }`}
+              />
+            </button>
           </div>
         </div>
 
