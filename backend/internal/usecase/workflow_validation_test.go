@@ -9,8 +9,8 @@ import (
 )
 
 type workflowDefinition struct {
-	Name        string                            `json:"name"`
-	Nodes       []workflowNode                    `json:"nodes"`
+	Name        string                                      `json:"name"`
+	Nodes       []workflowNode                              `json:"nodes"`
 	Connections map[string]map[string][][]connectionTarget `json:"connections"`
 }
 
@@ -53,7 +53,7 @@ func TestFastMossScraperWorkflow_TemplateIntegrity(t *testing.T) {
 		nodesByName[n.Name] = n
 	}
 
-	// 1. Verify Schedule Triggers
+	// 1. Verify Schedule Triggers (Ticket 15)
 	shallow, exists := nodesByName["Schedule Trigger - Shallow Crawl (06:00, 12:00, 18:00)"]
 	if !exists {
 		t.Errorf("Missing shallow crawl schedule trigger node")
@@ -88,7 +88,7 @@ func TestFastMossScraperWorkflow_TemplateIntegrity(t *testing.T) {
 		}
 	}
 
-	// 2. Verify Cookie Injection in FastMoss Request Node
+	// 2. Verify Cookie Injection in FastMoss Request Node (Ticket 15)
 	fetchNode, exists := nodesByName["HTTP Request - Fetch FastMoss Page"]
 	if !exists {
 		t.Errorf("Missing FastMoss HTTP request node")
@@ -110,7 +110,7 @@ func TestFastMossScraperWorkflow_TemplateIntegrity(t *testing.T) {
 		}
 	}
 
-	// 3. Verify Anti-Ban Jitter and Cool-Off logic
+	// 3. Verify Anti-Ban Jitter and Cool-Off logic (Ticket 15)
 	jitterNode, exists := nodesByName["Calculate Jitter Delay & Cool-Off Pause"]
 	if !exists {
 		t.Errorf("Missing Jitter & Cool-off calculation node")
@@ -121,7 +121,7 @@ func TestFastMossScraperWorkflow_TemplateIntegrity(t *testing.T) {
 		}
 	}
 
-	// 4. Verify Immediate Halting on HTTP 403 / 429
+	// 4. Verify Immediate Halting on HTTP 403 / 429 (Ticket 15)
 	stopNode, exists := nodesByName["Stop and Terminate Workflow Immediately"]
 	if !exists {
 		t.Errorf("Missing Stop and Terminate node")
@@ -129,7 +129,93 @@ func TestFastMossScraperWorkflow_TemplateIntegrity(t *testing.T) {
 		t.Errorf("Expected stop node type 'n8n-nodes-base.stopAndError', got '%s'", stopNode.Type)
 	}
 
-	// 5. Verify Workflow Topology Integrity
+	// 5. Verify Pre-Filtering Quality Gate Rules (Ticket 16)
+	gateNode, exists := nodesByName["Pre-Filter Quality Gate & Taxonomy Extraction"]
+	if !exists {
+		t.Errorf("Missing Pre-Filter Quality Gate node")
+	} else {
+		code, _ := gateNode.Parameters["jsCode"].(string)
+		if !strings.Contains(code, "commissionRate >= 10.0") ||
+			!strings.Contains(code, "price >= 80.0") ||
+			!strings.Contains(code, "price <= 1500.0") ||
+			!strings.Contains(code, "totalSales >= 30") {
+			t.Errorf("Pre-Filter node missing required criteria (commission >= 10%%, price 80-1500, sales >= 30)")
+		}
+	}
+
+	// 6. Verify Supabase ON CONFLICT Upsert Nodes (Ticket 16)
+	upsertCatNode, exists := nodesByName["Supabase - Upsert Categories"]
+	if !exists {
+		t.Errorf("Missing Supabase Upsert Categories node")
+	} else {
+		url, _ := upsertCatNode.Parameters["url"].(string)
+		if !strings.Contains(url, "on_conflict=slug") {
+			t.Errorf("Categories upsert does not have on_conflict=slug in url: %s", url)
+		}
+	}
+
+	upsertProdNode, exists := nodesByName["Supabase - Upsert Products"]
+	if !exists {
+		t.Errorf("Missing Supabase Upsert Products node")
+	} else {
+		url, _ := upsertProdNode.Parameters["url"].(string)
+		if !strings.Contains(url, "on_conflict=source_id") {
+			t.Errorf("Products upsert does not have on_conflict=source_id in url: %s", url)
+		}
+	}
+
+	insertSnapshotsNode, exists := nodesByName["Supabase - Insert Product Snapshots"]
+	if !exists {
+		t.Errorf("Missing Supabase Insert Product Snapshots node")
+	} else {
+		url, _ := insertSnapshotsNode.Parameters["url"].(string)
+		if !strings.Contains(url, "on_conflict=product_id,crawl_log_id") {
+			t.Errorf("Snapshots insert does not have on_conflict=product_id,crawl_log_id in url: %s", url)
+		}
+	}
+
+	// 7. Verify crawl_logs Audit Counts Update (Ticket 16)
+	auditNode, exists := nodesByName["Supabase - Update crawl_logs Audit Counts"]
+	if !exists {
+		t.Errorf("Missing Supabase Update crawl_logs Audit Counts node")
+	} else {
+		body, _ := auditNode.Parameters["jsonBody"].(string)
+		if !strings.Contains(body, "total_pages_requested") ||
+			!strings.Contains(body, "total_pages_success") ||
+			!strings.Contains(body, "raw_products_scraped") ||
+			!strings.Contains(body, "filtered_products_saved") {
+			t.Errorf("Audit counts update missing required count fields in body: %s", body)
+		}
+	}
+
+	// 8. Verify Go Analytics Engine Webhook Trigger (Ticket 16)
+	webhookNode, exists := nodesByName["HTTP Request - Trigger Go Analytics Engine"]
+	if !exists {
+		t.Errorf("Missing HTTP Request Trigger Go Analytics Engine node")
+	} else {
+		url, _ := webhookNode.Parameters["url"].(string)
+		if !strings.Contains(url, "/api/v1/jobs/compute-scores") {
+			t.Errorf("Webhook node URL does not target /api/v1/jobs/compute-scores: %s", url)
+		}
+
+		headerParams, _ := webhookNode.Parameters["headerParameters"].(map[string]interface{})
+		params, _ := headerParams["parameters"].([]interface{})
+		hasAPIKey := false
+		for _, p := range params {
+			pMap, _ := p.(map[string]interface{})
+			if pMap["name"] == "X-API-Key" {
+				val, _ := pMap["value"].(string)
+				if strings.Contains(val, "$env.INTERNAL_API_KEY") {
+					hasAPIKey = true
+				}
+			}
+		}
+		if !hasAPIKey {
+			t.Errorf("Webhook node does not pass authenticated X-API-Key header referencing $env.INTERNAL_API_KEY")
+		}
+	}
+
+	// 9. Verify Workflow Topology Integrity
 	for source, targets := range wf.Connections {
 		if _, ok := nodesByName[source]; !ok {
 			t.Errorf("Connection source '%s' does not exist in nodes", source)
