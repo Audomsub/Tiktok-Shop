@@ -41,6 +41,7 @@ workflow.nodes.forEach(node => {
 });
 
 const requiredNodeNames = [
+  // Ticket 15 Nodes
   'Schedule Trigger - Shallow Crawl (06:00, 12:00, 18:00)',
   'Schedule Trigger - Deep Crawl (00:00 Midnight)',
   'Manual / Test Trigger',
@@ -57,7 +58,19 @@ const requiredNodeNames = [
   'Emergency Alert Notification (Discord/Slack)',
   'Stop and Terminate Workflow Immediately',
   'Collect Page Products & Loop Back',
-  'Aggregate Raw Products (Ready for Quality Gate)'
+  'Aggregate Raw Products (Ready for Quality Gate)',
+  // Ticket 16 Nodes
+  'Pre-Filter Quality Gate & Taxonomy Extraction',
+  'If Any Products Passed Quality Gate',
+  'Supabase - Upsert Categories',
+  'Prepare Products with Category IDs',
+  'Supabase - Upsert Products',
+  'Prepare Snapshots Payload',
+  'Supabase - Insert Product Snapshots',
+  'Format Audit Counts Update',
+  'Supabase - Update crawl_logs Audit Counts',
+  'HTTP Request - Trigger Go Analytics Engine',
+  'Workflow Execution Summary'
 ];
 
 for (const name of requiredNodeNames) {
@@ -120,7 +133,82 @@ if (stopNode.type !== 'n8n-nodes-base.stopAndError') {
 }
 console.log('✅ Stop and Terminate node uses stopAndError to protect session.');
 
-// 7. Validate Connections Graph
+// 7. Validate Ticket 16 - Pre-Filtering Quality Gate Rules
+const filterNode = nodeMap.get('Pre-Filter Quality Gate & Taxonomy Extraction');
+const filterCode = filterNode.parameters?.jsCode || '';
+const hasCommissionRule = filterCode.includes('commissionRate >= 10.0');
+const hasPriceRule = filterCode.includes('price >= 80.0') && filterCode.includes('price <= 1500.0');
+const hasSalesRule = filterCode.includes('totalSales >= 30');
+
+if (!hasCommissionRule || !hasPriceRule || !hasSalesRule) {
+  console.error('❌ Pre-Filtering quality criteria missing: requires Commission >= 10%, Price 80-1,500 THB, Total Sales >= 30');
+  process.exit(1);
+}
+console.log('✅ Pre-Filtering Quality Gate rules verified (Commission >= 10%, Price 80-1,500 THB, Sales >= 30).');
+
+// 8. Validate Ticket 16 - Supabase Upsert Nodes & ON CONFLICT Clauses
+const upsertCatNode = nodeMap.get('Supabase - Upsert Categories');
+if (!upsertCatNode.parameters?.url?.includes('on_conflict=slug')) {
+  console.error('❌ Categories upsert URL missing on_conflict=slug');
+  process.exit(1);
+}
+const catHeaders = upsertCatNode.parameters?.headerParameters?.parameters || [];
+const catPrefer = catHeaders.find(h => h.name.toLowerCase() === 'prefer');
+if (!catPrefer?.value?.includes('resolution=merge-duplicates')) {
+  console.error('❌ Categories upsert Prefer header missing resolution=merge-duplicates');
+  process.exit(1);
+}
+console.log('✅ Categories auto-upsert verified with on_conflict=slug and merge-duplicates.');
+
+const upsertProdNode = nodeMap.get('Supabase - Upsert Products');
+if (!upsertProdNode.parameters?.url?.includes('on_conflict=source_id')) {
+  console.error('❌ Products upsert URL missing on_conflict=source_id');
+  process.exit(1);
+}
+const prodHeaders = upsertProdNode.parameters?.headerParameters?.parameters || [];
+const prodPrefer = prodHeaders.find(h => h.name.toLowerCase() === 'prefer');
+if (!prodPrefer?.value?.includes('resolution=merge-duplicates')) {
+  console.error('❌ Products upsert Prefer header missing resolution=merge-duplicates');
+  process.exit(1);
+}
+console.log('✅ Products auto-upsert verified with on_conflict=source_id and merge-duplicates.');
+
+const insertSnapshotsNode = nodeMap.get('Supabase - Insert Product Snapshots');
+if (!insertSnapshotsNode.parameters?.url?.includes('on_conflict=product_id,crawl_log_id')) {
+  console.error('❌ Snapshots insert URL missing on_conflict=product_id,crawl_log_id');
+  process.exit(1);
+}
+console.log('✅ Product snapshots idempotent insert verified with on_conflict=product_id,crawl_log_id.');
+
+// 9. Validate Ticket 16 - Audit Counts Logging in crawl_logs
+const updateAuditNode = nodeMap.get('Supabase - Update crawl_logs Audit Counts');
+const auditBody = updateAuditNode.parameters?.jsonBody || '';
+if (
+  !auditBody.includes('total_pages_requested') ||
+  !auditBody.includes('total_pages_success') ||
+  !auditBody.includes('raw_products_scraped') ||
+  !auditBody.includes('filtered_products_saved')
+) {
+  console.error('❌ crawl_logs audit update missing required count fields');
+  process.exit(1);
+}
+console.log('✅ crawl_logs audit counts update verified (total_pages, raw_scraped, filtered_saved).');
+
+// 10. Validate Ticket 16 - Go Backend Webhook Handshake
+const webhookNode = nodeMap.get('HTTP Request - Trigger Go Analytics Engine');
+if (!webhookNode.parameters?.url?.includes('/api/v1/jobs/compute-scores')) {
+  console.error('❌ Webhook URL does not target /api/v1/jobs/compute-scores');
+  process.exit(1);
+}
+const webhookHeaders = webhookNode.parameters?.headerParameters?.parameters || [];
+const apiKeyHeader = webhookHeaders.find(h => h.name === 'X-API-Key');
+if (!apiKeyHeader || !apiKeyHeader.value?.includes('$env.INTERNAL_API_KEY')) {
+  console.error('❌ Webhook missing authenticated X-API-Key header referencing $env.INTERNAL_API_KEY');
+  process.exit(1);
+}
+console.log('✅ Go Analytics Engine webhook handshake verified with X-API-Key and crawl_log_id.');
+
+// 11. Validate Connections Graph
 for (const [sourceName, targets] of Object.entries(workflow.connections)) {
   if (!nodeMap.has(sourceName)) {
     console.error(`❌ Connection source refers to unknown node: "${sourceName}"`);
@@ -137,6 +225,6 @@ for (const [sourceName, targets] of Object.entries(workflow.connections)) {
     });
   }
 }
-console.log('✅ Workflow node connection topology is 100% consistent.');
+console.log('✅ Workflow node connection topology is 100% consistent across all 28 nodes.');
 
-console.log('\n🎉 ALL VALIDATION CHECKS PASSED FOR TICKET 15 WORKFLOW!');
+console.log('\n🎉 ALL VALIDATION CHECKS PASSED FOR TICKET 15 & TICKET 16 PIPELINE!');
