@@ -1,7 +1,9 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"testing"
 	"time"
@@ -10,7 +12,8 @@ import (
 )
 
 type mockProductRepo struct {
-	listCatalogFunc func(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error)
+	listCatalogFunc   func(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error)
+	streamCatalogFunc func(ctx context.Context, filter domain.ProductCatalogFilter, onRow func(item *domain.ProductCatalogItem) error) error
 }
 
 func (m *mockProductRepo) ListCatalog(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error) {
@@ -18,6 +21,13 @@ func (m *mockProductRepo) ListCatalog(ctx context.Context, filter domain.Product
 		return m.listCatalogFunc(ctx, filter)
 	}
 	return nil, nil
+}
+
+func (m *mockProductRepo) StreamCatalog(ctx context.Context, filter domain.ProductCatalogFilter, onRow func(item *domain.ProductCatalogItem) error) error {
+	if m.streamCatalogFunc != nil {
+		return m.streamCatalogFunc(ctx, filter, onRow)
+	}
+	return nil
 }
 
 func TestProductUsecase_GetCatalog(t *testing.T) {
@@ -139,6 +149,119 @@ func TestProductUsecase_GetCatalog(t *testing.T) {
 		}
 		if respAnon.Items[0].IsFavorited || respAnon.Items[1].IsFavorited {
 			t.Errorf("expected anonymous user to have all IsFavorited=false")
+		}
+	})
+}
+
+func TestProductUsecase_ExportCatalogCSV(t *testing.T) {
+	t.Run("Streams CSV with UTF-8 BOM, required headers, and correct values", func(t *testing.T) {
+		mockRepo := &mockProductRepo{
+			streamCatalogFunc: func(ctx context.Context, filter domain.ProductCatalogFilter, onRow func(item *domain.ProductCatalogItem) error) error {
+				item := &domain.ProductCatalogItem{
+					ID:              "p-thai-1",
+					Name:            "เสื้อยืดผ้าฝ้ายระบายอากาศ TikTok Viral",
+					CategoryName:    "Fashion",
+					Price:           290.00,
+					CommissionRate:  20.00,
+					TotalSales:      1500,
+					VelocityPerHour: 12.50,
+					WinningScore:    88.5,
+					ProductURL:      "https://shop.tiktok.com/p1",
+					CreatedAt:       time.Now(),
+				}
+				return onRow(item)
+			},
+		}
+
+		u := NewProductUsecase(mockRepo)
+		var buf bytes.Buffer
+		err := u.ExportCatalogCSV(context.Background(), domain.ProductCatalogFilter{}, &buf)
+		if err != nil {
+			t.Fatalf("unexpected export error: %v", err)
+		}
+
+		data := buf.Bytes()
+		// 1. Check UTF-8 BOM (\xEF\xBB\xBF)
+		if len(data) < 3 || data[0] != 0xEF || data[1] != 0xBB || data[2] != 0xBF {
+			t.Fatalf("expected UTF-8 BOM at beginning of file, got %v", data[:3])
+		}
+
+		// Parse CSV without BOM
+		r := csv.NewReader(bytes.NewReader(data[3:]))
+		records, err := r.ReadAll()
+		if err != nil {
+			t.Fatalf("failed reading CSV content: %v", err)
+		}
+
+		if len(records) != 2 {
+			t.Fatalf("expected 2 records (1 header + 1 row), got %d", len(records))
+		}
+
+		// 2. Check 10 required header columns
+		expectedHeaders := []string{
+			"Product ID",
+			"Name",
+			"Category",
+			"Price",
+			"Commission Rate",
+			"Expected Return THB",
+			"Total Sales",
+			"Velocity Per Hour",
+			"Winning Score",
+			"TikTok Product URL",
+		}
+		for i, h := range expectedHeaders {
+			if records[0][i] != h {
+				t.Errorf("header col %d mismatch: expected %q, got %q", i, h, records[0][i])
+			}
+		}
+
+		// 3. Check data row
+		row := records[1]
+		if row[0] != "p-thai-1" {
+			t.Errorf("expected product id p-thai-1, got %q", row[0])
+		}
+		if row[1] != "เสื้อยืดผ้าฝ้ายระบายอากาศ TikTok Viral" {
+			t.Errorf("expected Thai product name, got %q", row[1])
+		}
+		if row[2] != "Fashion" {
+			t.Errorf("expected Category Fashion, got %q", row[2])
+		}
+		if row[3] != "290.00" {
+			t.Errorf("expected Price 290.00, got %q", row[3])
+		}
+		if row[4] != "20.00%" {
+			t.Errorf("expected Commission Rate 20.00%%, got %q", row[4])
+		}
+		if row[5] != "58.00" { // 290 * 0.20 = 58.00
+			t.Errorf("expected Expected Return 58.00, got %q", row[5])
+		}
+		if row[6] != "1500" {
+			t.Errorf("expected Total Sales 1500, got %q", row[6])
+		}
+		if row[7] != "12.50" {
+			t.Errorf("expected Velocity 12.50, got %q", row[7])
+		}
+		if row[8] != "88.50" {
+			t.Errorf("expected Winning Score 88.50, got %q", row[8])
+		}
+		if row[9] != "https://shop.tiktok.com/p1" {
+			t.Errorf("expected URL https://shop.tiktok.com/p1, got %q", row[9])
+		}
+	})
+
+	t.Run("Propagates stream error from repository", func(t *testing.T) {
+		mockRepo := &mockProductRepo{
+			streamCatalogFunc: func(ctx context.Context, filter domain.ProductCatalogFilter, onRow func(item *domain.ProductCatalogItem) error) error {
+				return errors.New("stream db disconnected")
+			},
+		}
+
+		u := NewProductUsecase(mockRepo)
+		var buf bytes.Buffer
+		err := u.ExportCatalogCSV(context.Background(), domain.ProductCatalogFilter{}, &buf)
+		if err == nil {
+			t.Fatal("expected error, got nil")
 		}
 	})
 }

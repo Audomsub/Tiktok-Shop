@@ -20,22 +20,8 @@ func NewPostgresProductRepo(pool *pgxpool.Pool) domain.ProductRepository {
 	return &PostgresProductRepo{pool: pool}
 }
 
-// ListCatalog queries products and their latest snapshot metrics with filtering, sorting, and pagination
-func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error) {
-	// 1. Sanitize pagination bounds
-	page := filter.Page
-	if page < 1 {
-		page = 1
-	}
-	limit := filter.Limit
-	if limit < 1 {
-		limit = 20
-	} else if limit > 100 {
-		limit = 100
-	}
-	offset := (page - 1) * limit
-
-	// 2. Build dynamic WHERE conditions and parameterized arguments
+// buildCatalogFilterClauses generates WHERE and ORDER BY clauses with parameterized arguments
+func buildCatalogFilterClauses(filter domain.ProductCatalogFilter) (string, string, []any) {
 	var whereConditions []string
 	var args []any
 	argIndex := 1
@@ -78,7 +64,52 @@ func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.Pro
 		whereClause = "WHERE " + strings.Join(whereConditions, " AND ")
 	}
 
-	// 3. Count total matching rows
+	// Determine safe ORDER BY clause (Whitelisted columns to prevent SQL injection)
+	sortColumn := "COALESCE(snap.winning_score, 0)"
+	switch strings.ToLower(filter.SortBy) {
+	case "velocity":
+		sortColumn = "COALESCE(snap.velocity_per_hour, 0)"
+	case "total_sales":
+		sortColumn = "COALESCE(snap.total_sales, 0)"
+	case "commission_rate":
+		sortColumn = "p.commission_rate"
+	case "price":
+		sortColumn = "COALESCE(snap.price, 0)"
+	case "created_at":
+		sortColumn = "p.created_at"
+	case "winning_score":
+		sortColumn = "COALESCE(snap.winning_score, 0)"
+	}
+
+	sortOrder := "DESC"
+	if strings.ToLower(filter.SortOrder) == "asc" {
+		sortOrder = "ASC"
+	}
+
+	orderByClause := fmt.Sprintf("ORDER BY %s %s, p.created_at DESC", sortColumn, sortOrder)
+
+	return whereClause, orderByClause, args
+}
+
+// ListCatalog queries products and their latest snapshot metrics with filtering, sorting, and pagination
+func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.ProductCatalogFilter) (*domain.ProductCatalogResponse, error) {
+	// 1. Sanitize pagination bounds
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	limit := filter.Limit
+	if limit < 1 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+
+	whereClause, orderByClause, args := buildCatalogFilterClauses(filter)
+	argCount := len(args)
+
+	// 2. Count total matching rows
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM products p
@@ -112,31 +143,7 @@ func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.Pro
 		}, nil
 	}
 
-	// 4. Determine safe ORDER BY clause (Whitelisted columns to prevent SQL injection)
-	sortColumn := "COALESCE(snap.winning_score, 0)"
-	switch strings.ToLower(filter.SortBy) {
-	case "velocity":
-		sortColumn = "COALESCE(snap.velocity_per_hour, 0)"
-	case "total_sales":
-		sortColumn = "COALESCE(snap.total_sales, 0)"
-	case "commission_rate":
-		sortColumn = "p.commission_rate"
-	case "price":
-		sortColumn = "COALESCE(snap.price, 0)"
-	case "created_at":
-		sortColumn = "p.created_at"
-	case "winning_score":
-		sortColumn = "COALESCE(snap.winning_score, 0)"
-	}
-
-	sortOrder := "DESC"
-	if strings.ToLower(filter.SortOrder) == "asc" {
-		sortOrder = "ASC"
-	}
-
-	orderByClause := fmt.Sprintf("ORDER BY %s %s, p.created_at DESC", sortColumn, sortOrder)
-
-	// 5. Query page items
+	// 3. Query page items
 	dataQuery := fmt.Sprintf(`
 		SELECT 
 			p.id,
@@ -166,7 +173,7 @@ func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.Pro
 		%s
 		%s
 		LIMIT $%d OFFSET $%d;
-	`, whereClause, orderByClause, argIndex, argIndex+1)
+	`, whereClause, orderByClause, argCount+1, argCount+2)
 
 	queryArgs := append(args, limit, offset)
 
@@ -213,4 +220,79 @@ func (r *PostgresProductRepo) ListCatalog(ctx context.Context, filter domain.Pro
 		TotalPages: totalPages,
 		Items:      items,
 	}, nil
+}
+
+// StreamCatalog queries matching catalog products and streams them one by one through onRow callback
+func (r *PostgresProductRepo) StreamCatalog(ctx context.Context, filter domain.ProductCatalogFilter, onRow func(item *domain.ProductCatalogItem) error) error {
+	whereClause, orderByClause, args := buildCatalogFilterClauses(filter)
+
+	dataQuery := fmt.Sprintf(`
+		SELECT 
+			p.id,
+			p.source_id,
+			p.name,
+			COALESCE(p.product_url, '') AS product_url,
+			COALESCE(p.image_url, '') AS image_url,
+			p.category_id,
+			COALESCE(c.name, 'Uncategorized') AS category_name,
+			COALESCE(snap.price, 0.00) AS price,
+			p.commission_rate,
+			COALESCE(snap.total_sales, 0) AS total_sales,
+			COALESCE(snap.delta_sales, 0) AS delta_sales,
+			COALESCE(snap.velocity_per_hour, 0.00) AS velocity_per_hour,
+			COALESCE(snap.winning_score, 0.00) AS winning_score,
+			COALESCE(snap.snapshot_time, p.created_at) AS snapshot_time,
+			p.created_at
+		FROM products p
+		LEFT JOIN categories c ON p.category_id = c.id
+		LEFT JOIN LATERAL (
+			SELECT price, commission_rate, total_sales, delta_sales, velocity_per_hour, winning_score, snapshot_time
+			FROM product_snapshots
+			WHERE product_id = p.id
+			ORDER BY snapshot_time DESC
+			LIMIT 1
+		) snap ON true
+		%s
+		%s;
+	`, whereClause, orderByClause)
+
+	rows, err := r.pool.Query(ctx, dataQuery, args...)
+	if err != nil {
+		return fmt.Errorf("failed executing catalog stream query: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		item := &domain.ProductCatalogItem{}
+		err := rows.Scan(
+			&item.ID,
+			&item.SourceID,
+			&item.Name,
+			&item.ProductURL,
+			&item.ImageURL,
+			&item.CategoryID,
+			&item.CategoryName,
+			&item.Price,
+			&item.CommissionRate,
+			&item.TotalSales,
+			&item.DeltaSales,
+			&item.VelocityPerHour,
+			&item.WinningScore,
+			&item.SnapshotTime,
+			&item.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed scanning catalog stream item: %w", err)
+		}
+
+		if err := onRow(item); err != nil {
+			return err
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error during catalog streaming: %w", err)
+	}
+
+	return nil
 }
