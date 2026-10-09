@@ -70,7 +70,7 @@ func main() {
 	trendUsecase := usecase.NewTrendUsecase(trendRepo)
 	trendHandler := handlers.NewTrendHandler(trendUsecase)
 
-	authMiddleware := customMiddleware.NewAuthMiddleware(cfg.SupabaseJWTSecret)
+	authMiddleware := customMiddleware.NewAuthMiddleware(cfg.SupabaseJWTSecret, cfg.SupabaseURL, cfg.SupabaseServiceKey)
 
 	// 4. Router Construction
 	router := httpDelivery.NewRouter(httpDelivery.RouterConfig{

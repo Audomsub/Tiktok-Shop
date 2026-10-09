@@ -6,20 +6,42 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Audomsub/Tiktok-Shop/backend/internal/domain"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// AuthMiddleware provides JWT authentication guards for HTTP routes
-type AuthMiddleware struct {
-	jwtSecret []byte
+type cachedClaim struct {
+	claims    *domain.SupabaseClaims
+	expiresAt time.Time
 }
 
-// NewAuthMiddleware constructs a new AuthMiddleware instance with the Supabase JWT secret
-func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
+// AuthMiddleware provides JWT authentication guards for HTTP routes
+type AuthMiddleware struct {
+	jwtSecret   []byte
+	supabaseURL string
+	supabaseKey string
+	tokenCache  sync.Map
+	httpClient  *http.Client
+}
+
+// NewAuthMiddleware constructs a new AuthMiddleware instance with Supabase JWT secret and optional Supabase URL/Key
+func NewAuthMiddleware(jwtSecret string, opts ...string) *AuthMiddleware {
+	var supabaseURL, supabaseKey string
+	if len(opts) > 0 {
+		supabaseURL = strings.TrimRight(strings.TrimSpace(opts[0]), "/")
+	}
+	if len(opts) > 1 {
+		supabaseKey = strings.TrimSpace(opts[1])
+	}
+
 	return &AuthMiddleware{
-		jwtSecret: []byte(jwtSecret),
+		jwtSecret:   []byte(jwtSecret),
+		supabaseURL: supabaseURL,
+		supabaseKey: supabaseKey,
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -99,24 +121,73 @@ func (m *AuthMiddleware) OptionalAuth(next http.Handler) http.Handler {
 
 // parseAndValidateToken decodes and checks the JWT signature and standard claims
 func (m *AuthMiddleware) parseAndValidateToken(tokenStr string) (*domain.SupabaseClaims, error) {
+	// 1. Check in-memory cache
+	if val, ok := m.tokenCache.Load(tokenStr); ok {
+		entry := val.(*cachedClaim)
+		if time.Now().Before(entry.expiresAt) {
+			return entry.claims, nil
+		}
+		m.tokenCache.Delete(tokenStr)
+	}
+
 	claims := &domain.SupabaseClaims{}
 
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing algorithm: %v", token.Header["alg"])
+	// 2. Try local HMAC verification if token is HS256 and secret is configured
+	if len(m.jwtSecret) > 0 {
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing algorithm: %v", token.Header["alg"])
+			}
+			return m.jwtSecret, nil
+		})
+		if err == nil && token.Valid {
+			exp := time.Now().Add(5 * time.Minute)
+			if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(exp) {
+				exp = claims.ExpiresAt.Time
+			}
+			m.tokenCache.Store(tokenStr, &cachedClaim{claims: claims, expiresAt: exp})
+			return claims, nil
 		}
-		return m.jwtSecret, nil
-	})
-
-	if err != nil {
-		return nil, err
 	}
 
-	if !token.Valid {
-		return nil, fmt.Errorf("token signature is invalid")
+	// 3. Fallback: Validate via Supabase Auth API (Supports ES256 & asymmetric signing)
+	if m.supabaseURL != "" {
+		req, err := http.NewRequest(http.MethodGet, m.supabaseURL+"/auth/v1/user", nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+tokenStr)
+			if m.supabaseKey != "" {
+				req.Header.Set("apikey", m.supabaseKey)
+			}
+
+			resp, err := m.httpClient.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var su struct {
+						ID    string `json:"id"`
+						Email string `json:"email"`
+						Role  string `json:"role"`
+					}
+					if err := json.NewDecoder(resp.Body).Decode(&su); err == nil && su.ID != "" {
+						verifiedClaims := &domain.SupabaseClaims{
+							Email: su.Email,
+							Role:  su.Role,
+							RegisteredClaims: jwt.RegisteredClaims{
+								Subject: su.ID,
+							},
+						}
+						m.tokenCache.Store(tokenStr, &cachedClaim{
+							claims:    verifiedClaims,
+							expiresAt: time.Now().Add(5 * time.Minute),
+						})
+						return verifiedClaims, nil
+					}
+				}
+			}
+		}
 	}
 
-	return claims, nil
+	return nil, fmt.Errorf("token signature is invalid or unverifiable")
 }
 
 // writeUnauthorized returns a standard JSON error response with HTTP 401
