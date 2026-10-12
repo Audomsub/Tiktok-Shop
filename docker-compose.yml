@@ -83,16 +83,40 @@ services:
       - EXECUTIONS_DATA_MAX_AGE=168
       # Scraper Credentials & External Integrations
       - FASTMOSS_COOKIE=${FASTMOSS_COOKIE}
-      - FASTMOSS_API_BASE_URL=${FASTMOSS_API_BASE_URL:-https://api.fastmoss.com}
+      - FASTMOSS_SCRAPER_URL=http://scraper:3001
+      - FASTMOSS_API_BASE_URL=http://scraper:3001
       - SUPABASE_URL=${SUPABASE_URL:-https://evyltfcspqzctgdehxff.supabase.co}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - GO_BACKEND_URL=http://backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev_internal_api_key_secret_2026}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+    depends_on:
+      - scraper
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
       - app_network
+
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    container_name: affiliate_pulse_scraper
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - FASTMOSS_COOKIE=${FASTMOSS_COOKIE}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'fetch(\"http://localhost:3001/health\").then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - app_network
+
 
 volumes:
   pg_data:
