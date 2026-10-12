@@ -151,7 +151,8 @@ async function handleSearch(req, res) {
 
   const query = req.method === 'POST' ? req.body : req.query;
   const targetPage = parseInt(query.page || query.page_num || 1, 10);
-  const pageSize = parseInt(query.pageSize || query.pagesize || 20, 10);
+  const rawSize = parseInt(query.pageSize || query.pagesize || 10, 10);
+  const pageSize = Math.min(10, Math.max(1, rawSize || 10));
   const region = String(query.region || 'TH').toUpperCase();
   const order = String(query.order || '2,2');
 
