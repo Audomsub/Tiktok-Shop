@@ -45,7 +45,8 @@ function slugify(name) {
 }
 
 async function runLiveCrawl() {
-  console.log('🚀 [Live Ingestion] Starting live crawl round from FastMoss...');
+  const targetPages = parseInt(process.argv[2] || '20', 10);
+  console.log(`🚀 [Live Ingestion] Starting live crawl round from FastMoss (${targetPages} pages)...`);
 
   // 1. Initialize crawl_logs in Supabase
   const crawlRound = '12:00';
@@ -61,7 +62,7 @@ async function runLiveCrawl() {
     body: JSON.stringify({
       crawl_round: crawlRound,
       status: 'RUNNING',
-      total_pages_requested: 3,
+      total_pages_requested: targetPages,
       started_at: startedAt
     })
   });
@@ -70,12 +71,12 @@ async function runLiveCrawl() {
   const crawlLog = Array.isArray(crawlLogs) ? crawlLogs[0] : crawlLogs;
   console.log('✅ Created crawl_log ID:', crawlLog.id);
 
-  // 2. Fetch 3 pages from Scraper
+  // 2. Fetch pages from Scraper
   const allRawProducts = [];
-  for (let p = 1; p <= 3; p++) {
-    console.log(`📡 Fetching page ${p} from Scraper (${SCRAPER_URL})...`);
+  for (let p = 1; p <= targetPages; p++) {
+    console.log(`📡 Fetching page ${p}/${targetPages} from Scraper (${SCRAPER_URL})...`);
     try {
-      const resp = await fetch(`${SCRAPER_URL}/api/v1/fastmoss/search?page=${p}&pageSize=20&region=TH&order=2,2`);
+      const resp = await fetch(`${SCRAPER_URL}/api/v1/fastmoss/search?page=${p}&pageSize=10&region=TH&order=2,2`);
       const json = await resp.json();
       if (json.data && Array.isArray(json.data.product_list)) {
         console.log(`   Page ${p}: Received ${json.data.product_list.length} products`);
@@ -250,8 +251,8 @@ async function runLiveCrawl() {
     },
     body: JSON.stringify({
       status: 'COMPLETED',
-      total_pages_requested: 3,
-      total_pages_success: 3,
+      total_pages_requested: targetPages,
+      total_pages_success: targetPages,
       raw_products_scraped: allRawProducts.length,
       filtered_products_saved: snapshots.length,
       finished_at: new Date().toISOString()
