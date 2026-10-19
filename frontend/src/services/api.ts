@@ -2,8 +2,12 @@ import { LeaderboardResponse } from "@/types/leaderboard";
 import { Category, ProductCatalogResponse, CatalogFilterState } from "@/types/catalog";
 import { ProductTrendsResponse } from "@/types/trend";
 import { FavoriteListResponse } from "@/types/favorite";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL !== undefined
+    ? process.env.NEXT_PUBLIC_API_URL
+    : process.env.NODE_ENV === "production"
+    ? ""
+    : "http://localhost:8080";
 
 export async function fetchLeaderboard(limit: number = 10, token?: string): Promise<LeaderboardResponse> {
   try {

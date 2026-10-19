@@ -1,0 +1,64 @@
+name: CI/CD Pipeline - Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint & Test Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify Go Backend Build
+        working-directory: backend
+        run: |
+          go vet ./...
+          go test -v ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify Next.js Frontend Build
+        working-directory: frontend
+        run: |
+          npm ci
+          NEXT_TELEMETRY_DISABLED=1 npm run build
+
+  deploy:
+    name: Auto Deploy to Production Server
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        if: "${{ env.SSH_HOST != '' }}"
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/${{ secrets.SSH_USERNAME }}/tiktok-shop
+            chmod +x scripts/deploy.sh
+            ./scripts/deploy.sh

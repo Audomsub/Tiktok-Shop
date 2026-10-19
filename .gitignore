@@ -41,4 +41,5 @@ yarn-error.log*
 logs/
 *.log
 scratch/
+.scratch/
 tmp/
