@@ -10,7 +10,6 @@ import { TrendModal } from "@/components/trend-modal";
 import { formatTHB, formatNumber } from "@/lib/utils";
 import {
   Bookmark,
-  Heart,
   TrendingUp,
   ExternalLink,
   Activity,
@@ -19,16 +18,13 @@ import {
   Sparkles,
   LogIn,
   Trash2,
-  Percent,
-  Coins,
-  RefreshCw,
   AlertCircle,
-  ArrowRight,
+  Info,
 } from "lucide-react";
 
 export default function FavoritesPage() {
   const { user, accessToken, isLoading: isAuthLoading, openAuthModal } = useAuth();
-  const { toggleFavorite } = useFavorites();
+  const { favoriteItems, toggleFavorite } = useFavorites();
 
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,25 +35,32 @@ export default function FavoritesPage() {
     let active = true;
 
     async function loadFavorites() {
-      if (!accessToken) {
-        setIsLoading(false);
-        setFavorites([]);
+      // 1. If not authenticated, use locally persisted guest bookmarks
+      if (!accessToken || !user) {
+        if (active) {
+          setFavorites(favoriteItems);
+          setIsLoading(false);
+        }
         return;
       }
 
+      // 2. If authenticated, fetch from backend API
       setIsLoading(true);
       setError(null);
 
       try {
         const res = await fetchFavorites(accessToken);
         if (active) {
-          setFavorites(res.items || []);
+          const items = res.items || [];
+          // If server returned items, use them; otherwise fallback to local items
+          setFavorites(items.length > 0 ? items : favoriteItems);
         }
       } catch (err: unknown) {
         const errObj = err as Error;
-        console.error("Failed to load favorites list:", errObj);
+        console.error("Failed to load favorites list from server:", errObj);
         if (active) {
-          setError(errObj.message || "Failed to load bookmarks.");
+          // Fallback to local bookmarks if API network fails
+          setFavorites(favoriteItems);
         }
       } finally {
         if (active) {
@@ -73,11 +76,10 @@ export default function FavoritesPage() {
     return () => {
       active = false;
     };
-  }, [accessToken, isAuthLoading]);
+  }, [accessToken, user, isAuthLoading, favoriteItems]);
 
   // Handle optimistic removal from local view when unfavoriting
   const handleRemoveFavorite = async (productId: string) => {
-    // Optimistically filter out from local view
     setFavorites((prev) => prev.filter((item) => item.product_id !== productId));
     await toggleFavorite(productId);
   };
@@ -88,75 +90,28 @@ export default function FavoritesPage() {
       return { total: 0, avgCommission: 0, avgPrice: 0, totalYield: 0, maxScore: 0 };
     }
     const total = favorites.length;
-    const avgCommission = favorites.reduce((sum, item) => sum + item.commission_rate, 0) / total;
-    const avgPrice = favorites.reduce((sum, item) => sum + item.price, 0) / total;
-    const totalYield = favorites.reduce((sum, item) => sum + item.expected_return, 0);
-    const maxScore = Math.max(...favorites.map((item) => item.winning_score));
+    const avgCommission = favorites.reduce((sum, item) => sum + (item.commission_rate || 0), 0) / total;
+    const avgPrice = favorites.reduce((sum, item) => sum + (item.price || 0), 0) / total;
+    const totalYield = favorites.reduce((sum, item) => sum + (item.expected_return || 0), 0);
+    const maxScore = Math.max(...favorites.map((item) => item.winning_score || 0), 0);
 
     return { total, avgCommission, avgPrice, totalYield, maxScore };
   }, [favorites]);
 
-  // 1. Loading State (Auth Check)
-  if (isAuthLoading) {
+  // Loading State
+  if (isAuthLoading && isLoading) {
     return (
       <div className="container mx-auto px-4 sm:px-6 py-12 flex flex-col items-center justify-center min-h-[50vh]">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#fe2c55] border-t-transparent mb-4" />
-        <p className="text-sm text-muted-foreground animate-pulse">Checking creator session...</p>
+        <p className="text-sm text-muted-foreground animate-pulse">Loading saved creator bookmarks...</p>
       </div>
     );
   }
 
-  // 2. Unauthenticated State (Prompt User to Sign In)
-  if (!user) {
-    return (
-      <div className="container mx-auto px-4 sm:px-6 py-16 max-w-3xl">
-        <div className="rounded-3xl border border-border/60 bg-gradient-to-b from-card to-card/60 p-8 sm:p-12 text-center shadow-xl relative overflow-hidden">
-          {/* Subtle background glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-48 bg-gradient-to-r from-[#fe2c55]/15 to-[#25f4ee]/15 blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col items-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#fe2c55] to-[#25f4ee] p-0.5 shadow-xl shadow-[#fe2c55]/20 mb-6">
-              <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-background">
-                <Bookmark className="h-8 w-8 text-[#fe2c55]" />
-              </div>
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-              Sign In to View Bookmarks
-            </h1>
-            <p className="mt-3 text-sm text-muted-foreground max-w-lg leading-relaxed">
-              Save high-potential TikTok affiliate items to your personal watchlist, monitor hourly momentum curves, and plan your production pipeline in one place.
-            </p>
-
-            <div className="mt-8 flex flex-col sm:flex-row items-center gap-3">
-              <button
-                type="button"
-                onClick={() => openAuthModal("Sign in to access and manage your bookmarked winning products.")}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#fe2c55] to-[#fe2c55]/90 hover:opacity-95 text-white px-6 py-3 text-sm font-semibold shadow-lg shadow-[#fe2c55]/25 transition-all"
-              >
-                <LogIn className="h-4 w-4" />
-                <span>Sign In / Create Account</span>
-              </button>
-
-              <Link
-                href="/"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground px-6 py-3 text-sm font-semibold border border-border/60 transition-colors"
-              >
-                <span>Explore Leaderboard</span>
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. Authenticated State
   return (
-    <div className="container mx-auto px-4 sm:px-6 py-8">
+    <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
@@ -172,6 +127,17 @@ export default function FavoritesPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {!user && (
+            <button
+              type="button"
+              onClick={() => openAuthModal("Sign in to sync your bookmarks across all your devices.")}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fe2c55] to-[#fe2c55]/90 hover:opacity-95 text-white px-3.5 py-2 text-xs font-semibold shadow-md shadow-[#fe2c55]/20 transition-all"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              <span>Cloud Sync Sign In</span>
+            </button>
+          )}
+
           <Link
             href="/catalog"
             className="inline-flex items-center gap-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2 text-xs font-semibold border border-border/60 transition-colors"
@@ -181,6 +147,25 @@ export default function FavoritesPage() {
           </Link>
         </div>
       </div>
+
+      {/* Guest Mode Informational Banner */}
+      {!user && favorites.length > 0 && (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl bg-[#25f4ee]/10 border border-[#25f4ee]/20 p-4 text-xs text-foreground">
+          <div className="flex items-center gap-2.5">
+            <Info className="h-4 w-4 flex-shrink-0 text-[#25f4ee]" />
+            <p>
+              <strong>Guest Mode Active:</strong> Your bookmarks are saved locally on this browser.{" "}
+              <button
+                type="button"
+                onClick={() => openAuthModal("Sign in to back up and sync your bookmarks to cloud.")}
+                className="underline hover:text-[#25f4ee] font-semibold ml-1 cursor-pointer"
+              >
+                Sign in to save them to the cloud
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* KPI Stats Ribbon */}
       {favorites.length > 0 && (
@@ -259,7 +244,7 @@ export default function FavoritesPage() {
           </div>
           <h3 className="text-lg font-bold text-foreground">No Bookmarked Products Yet</h3>
           <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-            You haven&apos;t added any products to your bookmarks. Browse the real-time Winning Leaderboard or Product Catalog to discover and bookmark trending items.
+            You haven&apos;t added any products to your bookmarks yet. Click the heart icon on any product in the Leaderboard or Catalog to save it here!
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -298,7 +283,7 @@ export default function FavoritesPage() {
                     <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fe2c55]/20 to-[#25f4ee]/20 border border-[#fe2c55]/30 px-2.5 py-1 shadow-sm">
                       <Zap className="h-3.5 w-3.5 text-[#25f4ee] fill-[#25f4ee]" />
                       <span className="text-xs font-extrabold text-foreground">
-                        {item.winning_score.toFixed(1)}
+                        {(item.winning_score || 0).toFixed(1)}
                       </span>
                     </div>
 
@@ -339,7 +324,7 @@ export default function FavoritesPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Total Sales:{" "}
                       <span className="font-semibold text-foreground">
-                        {formatNumber(item.total_sales)}
+                        {formatNumber(item.total_sales || 0)}
                       </span>{" "}
                       units
                     </p>
@@ -355,7 +340,7 @@ export default function FavoritesPage() {
                       Price
                     </span>
                     <span className="text-xs font-bold text-foreground">
-                      {formatTHB(item.price)}
+                      {formatTHB(item.price || 0)}
                     </span>
                   </div>
                   <div>
@@ -373,7 +358,7 @@ export default function FavoritesPage() {
                       Est. Yield
                     </span>
                     <span className="text-xs font-bold text-amber-300">
-                      {formatTHB(item.expected_return)}
+                      {formatTHB(item.expected_return || 0)}
                     </span>
                   </div>
                 </div>

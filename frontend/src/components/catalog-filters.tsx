@@ -22,6 +22,11 @@ export function CatalogFilters({
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // Keep local search term synchronized if filters.q is reset
+  useEffect(() => {
+    setSearchTerm(filters.q || "");
+  }, [filters.q]);
+
   // Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -59,6 +64,11 @@ export function CatalogFilters({
             placeholder="Search products by title or keyword..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onFilterChange({ q: searchTerm, page: 1 });
+              }
+            }}
             className="w-full rounded-xl bg-secondary/50 border border-border/60 pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           />
           {searchTerm && (

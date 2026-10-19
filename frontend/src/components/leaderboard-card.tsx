@@ -25,7 +25,7 @@ interface LeaderboardCardProps {
 export function LeaderboardCard({ item, onSelectProduct }: LeaderboardCardProps) {
   const [imageError, setImageError] = useState(false);
   const { isFavorited, toggleFavorite } = useFavorites();
-  const favorited = isFavorited(item.product_id) || Boolean(item.is_favorited && !isFavorited(item.product_id) ? false : isFavorited(item.product_id));
+  const favorited = isFavorited(item.product_id) || Boolean(item.is_favorited);
 
   // Rank styling configuration
   const getRankBadge = (rank: number) => {
@@ -92,7 +92,23 @@ export function LeaderboardCard({ item, onSelectProduct }: LeaderboardCardProps)
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                toggleFavorite(item.product_id);
+                toggleFavorite(item.product_id, {
+                  product_id: item.product_id,
+                  source_id: item.product_id,
+                  name: item.name,
+                  product_url: item.product_url,
+                  image_url: item.image_url,
+                  category_name: item.category_name,
+                  price: item.price,
+                  commission_rate: item.commission_rate,
+                  total_sales: item.total_sales,
+                  delta_sales: item.delta_sales,
+                  velocity_per_hour: item.velocity_per_hour,
+                  expected_return: item.expected_return,
+                  winning_score: item.winning_score,
+                  snapshot_time: item.snapshot_time,
+                  favorited_at: new Date().toISOString(),
+                });
               }}
               className={`rounded-xl p-1.5 border transition-all duration-200 ${
                 favorited

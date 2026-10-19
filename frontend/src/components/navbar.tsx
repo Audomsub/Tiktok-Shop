@@ -85,7 +85,7 @@ export function Navbar() {
           >
             <Bookmark className="h-4 w-4" />
             <span className="hidden sm:inline">Bookmarks</span>
-            {user && favoritesCount > 0 && (
+            {favoritesCount > 0 && (
               <span className="inline-flex items-center justify-center rounded-full bg-[#fe2c55] px-1.5 py-0.2 text-[10px] font-bold text-white min-w-4 text-center">
                 {favoritesCount}
               </span>

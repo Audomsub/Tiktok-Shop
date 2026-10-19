@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { LeaderboardResponse, LeaderboardItem } from "@/types/leaderboard";
 import { fetchLeaderboard } from "@/services/api";
 import { useAuth } from "@/context/auth-context";
@@ -10,12 +11,15 @@ import {
   Trophy,
   RefreshCw,
   Clock,
-  CheckCircle2,
   AlertCircle,
   Sparkles,
+  Search,
+  X,
+  ShoppingBag,
+  ArrowRight,
 } from "lucide-react";
 
-// Mock data used when backend is offline in preview/dev mode
+// Mock data used ONLY when backend connection is unavailable
 const MOCK_FALLBACK_LEADERBOARD: LeaderboardResponse = {
   crawl_log_id: "demo-crawl-log",
   crawl_round: "12:00",
@@ -88,72 +92,6 @@ const MOCK_FALLBACK_LEADERBOARD: LeaderboardResponse = {
         is_winning_pick: true,
       },
     },
-    {
-      rank: 4,
-      product_id: "prod-mock-4",
-      name: "Ergonomic Memory Foam Lumbar Support Cushion for Office",
-      product_url: "https://shop.tiktok.com",
-      image_url: "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?w=400&q=80",
-      category_name: "Office Supplies",
-      price: 450.0,
-      total_sales: 3200,
-      delta_sales: 90,
-      velocity_per_hour: 7.5,
-      commission_rate: 20.0,
-      expected_return: 90.0,
-      winning_score: 79.1,
-      snapshot_time: new Date().toISOString(),
-      badges: {
-        is_viral_surge: false,
-        is_high_commission: true,
-        is_high_yield: false,
-        is_winning_pick: false,
-      },
-    },
-    {
-      rank: 5,
-      product_id: "prod-mock-5",
-      name: "Mini Portable Lint Remover Electric Clothes Fabric Shaver",
-      product_url: "https://shop.tiktok.com",
-      image_url: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=400&q=80",
-      category_name: "Home Appliances",
-      price: 189.0,
-      total_sales: 18200,
-      delta_sales: 110,
-      velocity_per_hour: 8.8,
-      commission_rate: 15.0,
-      expected_return: 28.35,
-      winning_score: 72.4,
-      snapshot_time: new Date().toISOString(),
-      badges: {
-        is_viral_surge: false,
-        is_high_commission: false,
-        is_high_yield: false,
-        is_winning_pick: false,
-      },
-    },
-    {
-      rank: 6,
-      product_id: "prod-mock-6",
-      name: "UV LED Nail Lamp Quick Drying Gel Polish Curing Light",
-      product_url: "https://shop.tiktok.com",
-      image_url: "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=400&q=80",
-      category_name: "Beauty & Personal Care",
-      price: 320.0,
-      total_sales: 5100,
-      delta_sales: 60,
-      velocity_per_hour: 5.0,
-      commission_rate: 25.0,
-      expected_return: 80.0,
-      winning_score: 70.8,
-      snapshot_time: new Date().toISOString(),
-      badges: {
-        is_viral_surge: false,
-        is_high_commission: true,
-        is_high_yield: false,
-        is_winning_pick: false,
-      },
-    },
   ],
 };
 
@@ -165,11 +103,14 @@ export default function LeaderboardPage() {
   const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string } | null>(null);
 
+  // Search & Filter state on homepage
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+
   const loadData = async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     try {
-      const result = await fetchLeaderboard(10, accessToken || undefined);
-      // If backend returned items, use them; if empty, use fallback in demo environment
+      const result = await fetchLeaderboard(20, accessToken || undefined);
       if (result && result.items && result.items.length > 0) {
         setData(result);
         setIsUsingFallback(false);
@@ -178,7 +119,6 @@ export default function LeaderboardPage() {
         setIsUsingFallback(true);
       }
     } catch {
-      // Graceful fallback to demo data if backend connection is unavailable
       setData(MOCK_FALLBACK_LEADERBOARD);
       setIsUsingFallback(true);
     } finally {
@@ -191,17 +131,41 @@ export default function LeaderboardPage() {
     loadData();
   }, [accessToken]);
 
+  // Extract unique categories from items
+  const uniqueCategories = useMemo(() => {
+    if (!data?.items) return [];
+    const set = new Set<string>();
+    data.items.forEach((item) => {
+      if (item.category_name) set.add(item.category_name);
+    });
+    return Array.from(set).sort();
+  }, [data?.items]);
+
+  // Live filter leaderboard items
+  const filteredItems = useMemo(() => {
+    if (!data?.items) return [];
+    return data.items.filter((item) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesQuery =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        (item.category_name && item.category_name.toLowerCase().includes(q));
+      const matchesCat = !selectedCategory || item.category_name === selectedCategory;
+      return matchesQuery && matchesCat;
+    });
+  }, [data?.items, searchQuery, selectedCategory]);
+
   return (
-    <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
+    <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl space-y-6">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-border/50">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-border/50">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-secondary/80 border border-border/60 px-3 py-1 text-xs font-semibold text-[#25f4ee] mb-3">
             <Sparkles className="h-3.5 w-3.5" />
             <span>AI Winning Radar</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground">
-            Top 10 Winning Leaderboard
+            Top Winning Leaderboard
           </h1>
           <p className="mt-2 text-sm sm:text-base text-muted-foreground max-w-2xl">
             Real-time algorithmic ranking weighted by sales velocity (50%), commission rate (30%), and expected return (20%).
@@ -234,9 +198,9 @@ export default function LeaderboardPage() {
         </div>
       </div>
 
-      {/* Demo Warning Notice if Go server is not yet returning crawled live data */}
+      {/* Offline Mode Warning */}
       {isUsingFallback && (
-        <div className="my-6 flex items-center gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-xs text-amber-200">
+        <div className="flex items-center gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-xs text-amber-200">
           <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-400" />
           <p>
             <strong>Preview Mode:</strong> Displaying simulated analytics items. Once the n8n crawler performs a live scraping cycle and stores snapshots, real-time products will display automatically.
@@ -244,9 +208,63 @@ export default function LeaderboardPage() {
         </div>
       )}
 
+      {/* Real-time Search & Filter Toolbar on Homepage */}
+      <div className="rounded-2xl bg-card border border-border/60 p-4 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          {/* Search Box */}
+          <div className="relative md:col-span-6">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search winning products by title or keyword..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-xl bg-secondary/50 border border-border/60 pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter */}
+          <div className="md:col-span-3">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full rounded-xl bg-secondary/50 border border-border/60 px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer"
+            >
+              <option value="">All Categories</option>
+              {uniqueCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Link to Full Catalog */}
+          <div className="md:col-span-3 flex justify-end">
+            <Link
+              href={searchQuery ? `/catalog?q=${encodeURIComponent(searchQuery)}` : "/catalog"}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2.5 text-xs font-semibold border border-border/60 transition-colors"
+            >
+              <ShoppingBag className="h-4 w-4 text-[#25f4ee]" />
+              <span>Explore Full Catalog</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* Loading Skeleton */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
           {[...Array(6)].map((_, i) => (
             <div
               key={i}
@@ -261,10 +279,10 @@ export default function LeaderboardPage() {
             </div>
           ))}
         </div>
-      ) : data?.items && data.items.length > 0 ? (
+      ) : filteredItems.length > 0 ? (
         /* Leaderboard Cards Grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-8">
-          {data.items.map((item: LeaderboardItem) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
+          {filteredItems.map((item: LeaderboardItem) => (
             <LeaderboardCard
               key={item.product_id}
               item={item}
@@ -273,15 +291,35 @@ export default function LeaderboardPage() {
           ))}
         </div>
       ) : (
-        /* Empty State */
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="h-14 w-14 rounded-2xl bg-secondary flex items-center justify-center text-muted-foreground mb-4">
-            <Trophy className="h-7 w-7" />
+        /* Search Empty State */
+        <div className="rounded-3xl border border-dashed border-border/80 bg-card/40 p-12 text-center max-w-xl mx-auto my-8">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/80 border border-border/60 text-muted-foreground mb-4">
+            <Trophy className="h-7 w-7 stroke-1" />
           </div>
-          <h3 className="text-lg font-bold text-foreground">No Snapshot Records Found</h3>
-          <p className="mt-1 text-sm text-muted-foreground max-w-md">
-            The database does not have completed crawl rounds yet. Trigger the crawler to populate product data.
+          <h3 className="text-lg font-bold text-foreground">No Leaderboard Items Match</h3>
+          <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
+            No products in the Top Leaderboard match &quot;{searchQuery}&quot;. You can clear your search or explore the full catalog containing all products.
           </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setSelectedCategory("");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2 text-xs font-semibold border border-border/60 transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Clear Filter</span>
+            </button>
+            <Link
+              href={searchQuery ? `/catalog?q=${encodeURIComponent(searchQuery)}` : "/catalog"}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fe2c55] to-[#fe2c55]/90 hover:opacity-95 text-white px-4 py-2 text-xs font-semibold shadow-md shadow-[#fe2c55]/20 transition-all"
+            >
+              <ShoppingBag className="h-3.5 w-3.5" />
+              <span>Search in Full Catalog</span>
+            </Link>
+          </div>
         </div>
       )}
 

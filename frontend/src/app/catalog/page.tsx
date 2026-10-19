@@ -9,7 +9,7 @@ import { CatalogTable } from "@/components/catalog-table";
 import { TrendModal } from "@/components/trend-modal";
 import { ShoppingBag, Sparkles, AlertCircle } from "lucide-react";
 
-// Fallback preview data when backend is not connected
+// Fallback preview data used ONLY when server is completely down
 const MOCK_CATEGORIES: Category[] = [
   { id: "cat-1", name: "Electronics", slug: "electronics", created_at: new Date().toISOString() },
   { id: "cat-2", name: "Beauty & Personal Care", slug: "beauty", created_at: new Date().toISOString() },
@@ -51,42 +51,6 @@ const MOCK_CATALOG_ITEMS: ProductCatalogItem[] = [
     velocity_per_hour: 16.0,
     expected_return: 117.0,
     winning_score: 91.2,
-    snapshot_time: new Date().toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "p-3",
-    source_id: "src-3",
-    name: "Smart Water Bottle with LED Temperature Display 500ml",
-    product_url: "https://shop.tiktok.com",
-    image_url: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400&q=80",
-    category_id: "cat-3",
-    category_name: "Home & Kitchen",
-    price: 299.0,
-    commission_rate: 22.0,
-    total_sales: 6400,
-    delta_sales: 180,
-    velocity_per_hour: 11.2,
-    expected_return: 65.78,
-    winning_score: 84.5,
-    snapshot_time: new Date().toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "p-4",
-    source_id: "src-4",
-    name: "Oversized Cotton Graphic Vintage Drop-Shoulder Tee",
-    product_url: "https://shop.tiktok.com",
-    image_url: "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=400&q=80",
-    category_id: "cat-4",
-    category_name: "Fashion & Apparel",
-    price: 350.0,
-    commission_rate: 20.0,
-    total_sales: 8500,
-    delta_sales: 120,
-    velocity_per_hour: 9.4,
-    expected_return: 70.0,
-    winning_score: 78.6,
     snapshot_time: new Date().toISOString(),
     created_at: new Date().toISOString(),
   },
@@ -139,21 +103,15 @@ export default function CatalogPage() {
     setIsLoading(true);
     try {
       const data = await fetchCatalog(filters, accessToken || undefined);
-      if (data && data.items && data.items.length > 0) {
+      // Valid response from server: update catalog data (even if items is empty array)
+      if (data && Array.isArray(data.items)) {
         setCatalogData(data);
         setIsUsingFallback(false);
       } else {
-        // Fallback for preview mode if live data is empty
-        setCatalogData({
-          page: 1,
-          limit: filters.limit || 20,
-          total_count: MOCK_CATALOG_ITEMS.length,
-          total_pages: 1,
-          items: MOCK_CATALOG_ITEMS,
-        });
-        setIsUsingFallback(true);
+        throw new Error("Invalid response format");
       }
     } catch {
+      // Fallback only if server completely unreachable
       setCatalogData({
         page: 1,
         limit: filters.limit || 20,
@@ -171,11 +129,11 @@ export default function CatalogPage() {
     loadCatalog();
   }, [loadCatalog]);
 
-  const handleFilterChange = (newFilters: Partial<CatalogFilterState>) => {
+  const handleFilterChange = useCallback((newFilters: Partial<CatalogFilterState>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
-  };
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setFilters({
       q: "",
       category_id: "",
@@ -187,9 +145,9 @@ export default function CatalogPage() {
       page: 1,
       limit: 20,
     });
-  };
+  }, []);
 
-  const handleSort = (column: string) => {
+  const handleSort = useCallback((column: string) => {
     setFilters((prev) => {
       if (prev.sort_by === column) {
         return {
@@ -205,15 +163,15 @@ export default function CatalogPage() {
         page: 1,
       };
     });
-  };
+  }, []);
 
-  const handlePageChange = (newPage: number) => {
+  const handlePageChange = useCallback((newPage: number) => {
     setFilters((prev) => ({ ...prev, page: newPage }));
-  };
+  }, []);
 
-  const handlePageSizeChange = (newSize: number) => {
+  const handlePageSizeChange = useCallback((newSize: number) => {
     setFilters((prev) => ({ ...prev, limit: newSize, page: 1 }));
-  };
+  }, []);
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl space-y-6">
@@ -229,17 +187,17 @@ export default function CatalogPage() {
             <span>Product Catalog</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-            Filter TikTok Shop affiliate opportunities by category, price range, commission yields, and algorithmic score.
+            Filter TikTok Shop affiliate opportunities by keyword search, category, price range, commission yields, and algorithmic score.
           </p>
         </div>
       </div>
 
-      {/* Preview Mode Notice */}
+      {/* Preview Mode Notice (only if backend is offline) */}
       {isUsingFallback && (
         <div className="flex items-center gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-xs text-amber-200">
           <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-400" />
           <p>
-            <strong>Preview Mode:</strong> Displaying simulated product records. As soon as the scraper runs, live items will populate this catalog.
+            <strong>Offline Mode:</strong> Could not connect to API server. Displaying cached records.
           </p>
         </div>
       )}
